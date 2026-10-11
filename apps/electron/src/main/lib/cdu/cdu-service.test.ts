@@ -168,6 +168,23 @@ test('Given 学校成绩网格加载超过三秒 When 查询 Then 有界等待�
   } finally { mock.mockRestore() }
 })
 
+test('Given 课表先出现空网格 When 后续填充课程 Then 等待真实课程后再保存', async () => {
+  const h = harness(); await h.service.openLogin('direct')
+  h.setPage(identity + grades); await h.service.verifyAccount()
+  h.setPage(identity, 'https://szjw.cdu.edu.cn/admin/xsd/pkgl/xskb/queryKbForXsd')
+  const execute = h.native.win.webContents.mainFrame.executeJavaScript.bind(h.native.win.webContents.mainFrame)
+  let snapshots = 0
+  const mock = spyOn(h.native.win.webContents.mainFrame, 'executeJavaScript').mockImplementation(async (source: string) => {
+    if (source.includes('document.body.cloneNode')) return identity + `<table><tr><th>节次</th><th>星期一</th><th>星期二</th></tr><tr><td>1</td><td>${++snapshots > 3 ? '合成课程' : ''}</td><td></td></tr></table>`
+    return execute(source)
+  })
+  try {
+    const result = await h.service.query({ domain: 'schedule', background: true })
+    expect(result.success).toBe(true)
+    expect(result.data?.tables[0]?.rows[0]).toEqual(['1', '合成课程', ''])
+  } finally { mock.mockRestore() }
+})
+
 describe('原生登录与只读查询', () => {
   test.each([
     ['父页面切换为另一账户', identity.replaceAll('20260001', '20260002')],

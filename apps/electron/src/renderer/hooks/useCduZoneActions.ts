@@ -1,5 +1,5 @@
 import { useStore } from 'jotai'
-import { cduAccountAtom, cduBusyAtom, cduDatasetsAtom, cduDiagnosticsAtom, cduDomainAtom, cduFormAtom, cduImportPreviewAtom, cduLoginFormAtom, cduNoticeAtom } from '@/atoms/cdu-atoms'
+import { cduAccountAtom, cduBusyAtom, cduDataRevisionAtom, cduDatasetsAtom, cduDiagnosticsAtom, cduDomainAtom, cduFormAtom, cduImportPreviewAtom, cduLoginFormAtom, cduNoticeAtom } from '@/atoms/cdu-atoms'
 import { readCduImportFile } from '@/lib/cdu-import'
 import { useOpenSession } from './useOpenSession'
 
@@ -16,6 +16,21 @@ export function useCduZoneActions() {
     finally { store.set(cduBusyAtom, '') }
   }
   return {
+    syncSchoolData: () => run('同步教务到应用', async () => {
+      const accountId = store.get(cduAccountAtom).studentId
+      if (!accountId || store.get(cduAccountAtom).status !== 'active') throw new Error('请先连接学校账户；本机已保存的数据仍可查看')
+      const failed: string[] = []; let count = 0
+      for (const domain of ['profile', 'schedule', 'grades', 'exams'] as const) {
+        if (store.get(cduAccountAtom).studentId !== accountId || store.get(cduAccountAtom).status !== 'active') break
+        const result = await window.electronAPI.cduZone.query({ domain, background: true })
+        if (store.get(cduAccountAtom).studentId !== accountId) return
+        const data = result.data
+        if (result.success && data?.accountId === accountId) {
+          store.set(cduDatasetsAtom, current => ({ ...current, [domain]: data })); count++
+        } else failed.push(result.error || '部分数据暂未同步')
+      }
+      store.set(cduNoticeAtom, count ? `已将 ${count} 类教务数据保存到应用${failed.length ? '，部分内容未更新，保留原有本地数据。' : '，可直接查看。'}` : failed[0] || '学校登录态已变化，请重新连接')
+    }),
     login: () => run('连接学校账号', async () => {
       const input = store.get(cduLoginFormAtom)
       store.set(cduLoginFormAtom, current => ({ ...current, password: '' }))
@@ -31,7 +46,7 @@ export function useCduZoneActions() {
       store.set(cduNoticeAtom, result.status === 'active' ? '学校账户验证成功' : result.message || '请先打开学校页面')
     }),
     query: (useCache: boolean) => run(useCache ? '读取本地数据' : '读取学校页面', async () => {
-      const result = await window.electronAPI.cduZone.query({ domain: store.get(cduDomainAtom), semester: store.get(cduFormAtom).semester, useCache })
+      const result = await window.electronAPI.cduZone.query({ domain: store.get(cduDomainAtom), semester: store.get(cduFormAtom).semester, useCache, background: true })
       if (!result.success || !result.data) throw new Error(result.error ?? '尚未读取到数据')
       if (store.get(cduAccountAtom).studentId !== result.data.accountId) throw new Error('账户已变化，请重新读取')
       store.set(cduDatasetsAtom, current => ({ ...current, [result.data!.domain]: result.data }))
@@ -52,11 +67,13 @@ export function useCduZoneActions() {
     }),
     diagnose: () => run('检查校园网络', async () => { store.set(cduDiagnosticsAtom, await window.electronAPI.cduZone.diagnose()) }),
     clearCache: () => run('清除本地数据', async () => {
+      store.set(cduDataRevisionAtom, value => value + 1)
       await window.electronAPI.cduZone.clearCache(store.get(cduAccountAtom).studentId)
       store.set(cduDatasetsAtom, {}); store.set(cduImportPreviewAtom, null)
       store.set(cduNoticeAtom, '本地教务缓存已清除')
     }),
     logout: () => run('退出学校账户', async () => {
+      store.set(cduDataRevisionAtom, value => value + 1)
       store.set(cduLoginFormAtom, { username: '', password: '' })
       await window.electronAPI.cduZone.logout()
       store.set(cduDatasetsAtom, {}); store.set(cduImportPreviewAtom, null)

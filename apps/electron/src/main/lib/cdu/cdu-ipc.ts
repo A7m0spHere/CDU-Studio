@@ -11,6 +11,10 @@ export function registerCduIpc(getMainWindow: () => BrowserWindow | null): void 
     })
   }
   handle(C.GET_ACCOUNT, () => cduService.getAccount())
+  handle(C.GET_SAVED_DATA, () => {
+    const accountId = cduService.getAccount().studentId
+    return accountId ? cduService.store.latest(accountId) : []
+  })
   handle(C.LOGIN, (_owner, input: CduLoginInput) => cduService.login(input))
   handle(C.OPEN_LOGIN, (_owner, mode: 'direct' | 'vpn') => cduService.openLogin(mode))
   handle(C.APPROVE_LEGACY_VPN_HTTP, () => cduService.approveLegacyVpnHttp())

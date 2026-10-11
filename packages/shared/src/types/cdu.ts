@@ -27,7 +27,7 @@ export interface CduDataset {
   /** 页面读取仅代表已加载的内容，不承诺未加载分页。 */
   completeness: 'visible' | 'imported' | 'complete'
 }
-export interface CduQueryInput { domain: CduDomain; semester?: string; useCache?: boolean }
+export interface CduQueryInput { domain: CduDomain; semester?: string; useCache?: boolean; background?: boolean }
 export interface CduQueryResult { success: boolean; data?: CduDataset; error?: string }
 export interface CduImportInput {
   domain: CduDomain
@@ -50,6 +50,7 @@ export interface CduDiagnostic {
 }
 export interface CduZoneAPI {
   getAccount(): Promise<CduAccountProfile>
+  getSavedData(): Promise<CduDataset[]>
   login(input: CduLoginInput): Promise<void>
   openLogin(mode: 'direct' | 'vpn'): Promise<void>
   approveLegacyVpnHttp(): Promise<void>
@@ -65,6 +66,7 @@ export interface CduZoneAPI {
 }
 export const CDU_ZONE_IPC_CHANNELS = {
   GET_ACCOUNT: 'cdu-zone:get-account', LOGIN: 'cdu-zone:login', OPEN_LOGIN: 'cdu-zone:open-login',
+  GET_SAVED_DATA: 'cdu-zone:get-saved-data',
   APPROVE_LEGACY_VPN_HTTP: 'cdu-zone:approve-legacy-vpn-http',
   VERIFY: 'cdu-zone:verify', LOGOUT: 'cdu-zone:logout', QUERY: 'cdu-zone:query',
   DIAGNOSE: 'cdu-zone:diagnose', PREVIEW_IMPORT: 'cdu-zone:preview-import',

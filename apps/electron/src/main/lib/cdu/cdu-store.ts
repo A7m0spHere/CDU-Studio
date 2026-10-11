@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from 'node:crypto'
-import { mkdirSync, rmSync } from 'node:fs'
+import { mkdirSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { CduAccountProfile, CduDataset, CduDomain, CduImportInput, CduImportPreview } from '@profer/shared'
 import { getConfigDir } from '../config-paths'
@@ -76,6 +76,26 @@ export class CduStore {
       ? { ...data, cached: true } : null
   }
   invalidatePreviews(): void { this.previews.clear() }
+  /** 从本人缓存恢复各类别最新版本，不依赖登录态，也不扫描其他账户。 */
+  latest(account: string): CduDataset[] {
+    const root = this.cacheRoot(account)
+    let directories: string[] = []
+    try { directories = readdirSync(root) } catch { return [] }
+    const latest = new Map<CduDomain, CduDataset>()
+    for (const directory of directories.slice(0, 200)) {
+      if (!/^[a-f0-9]{64}$/.test(String(directory))) continue
+      for (const domain of CDU_DOMAINS) {
+        const candidate = readJsonFileSafe<CduDataset>(join(root, String(directory), `${domain}.json`))
+        if (!candidate || typeof candidate.semester !== 'string' || !candidate.semester.trim() || candidate.semester.length > 40) continue
+        const data = this.load(account, candidate.semester, domain)
+        if (!data) continue
+        const previous = latest.get(domain)
+        const rows = (item: CduDataset): number => item.tables.reduce((sum, table) => sum + table.rows.length, 0)
+        if (!previous || data.fetchedAt > previous.fetchedAt || data.fetchedAt === previous.fetchedAt && rows(data) > rows(previous)) latest.set(domain, data)
+      }
+    }
+    return [...latest.values()]
+  }
   clearCache(account: string): void {
     rmSync(this.cacheRoot(account), { recursive: true, force: true })
     for (const [key, value] of this.previews) if (value.data.accountId === account) this.previews.delete(key)

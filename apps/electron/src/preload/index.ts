@@ -3655,6 +3655,7 @@ const electronAPI: ElectronAPI = {
   // ===== CDU 原生认证与只读教务 =====
   cduZone: {
     getAccount: () => ipcRenderer.invoke(CDU.GET_ACCOUNT),
+    getSavedData: () => ipcRenderer.invoke(CDU.GET_SAVED_DATA),
     login: (input) => ipcRenderer.invoke(CDU.LOGIN, input),
     openLogin: (mode) => ipcRenderer.invoke(CDU.OPEN_LOGIN, mode),
     approveLegacyVpnHttp: () => ipcRenderer.invoke(CDU.APPROVE_LEGACY_VPN_HTTP),

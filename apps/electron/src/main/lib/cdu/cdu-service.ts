@@ -406,7 +406,16 @@ export class CduService {
         return { success: false, error: '学校认证已过期或仍需验证，请在学校窗口完成认证后重新查询' }
       }
       let pages = sessionPages.filter(forDomain)
-      if (!pages.some(page => selectCduTables(input.domain, readCduPageTables(page.html)).length)) {
+      const ready = (page: PageSnapshot): boolean => {
+        const tables = selectCduTables(input.domain, readCduPageTables(page.html))
+        if (input.domain !== 'schedule') return tables.length > 0
+        return tables.some(table => {
+          const days = table.headers.flatMap((label, index) => /^(?:星期|周)[一二三四五六日天]$/.test(label.trim()) ? [index] : [])
+          return days.length ? table.rows.some(row => !/备注|说明/.test(row[0] ?? '') && days.some(index => row[index]?.trim())) : table.rows.length > 0
+        })
+      }
+      // 课表先出现空网格再填充课程；备注或表头不能提前结束等待。
+      if (!pages.some(ready)) {
         await this.navigateDomain(input.domain)
         // 真实页面可能异步渲染；有界轮询，不长期占用主线程。
         for (let attempt = 0; attempt < 40; attempt++) {
@@ -414,7 +423,7 @@ export class CduService {
           if (generation !== this.generation) return { success: false, error: '学校窗口已变化，请重新查询' }
           sessionPages = await this.snapshots()
           pages = sessionPages.filter(forDomain)
-          if (pages.some(page => selectCduTables(input.domain, readCduPageTables(page.html)).length)) break
+          if (pages.some(ready)) break
         }
       }
       if (generation !== this.generation || account.studentId !== this.getAccount().studentId) return { success: false, error: '账户或学校窗口已变化，请重新查询' }
@@ -436,7 +445,7 @@ export class CduService {
       const tables = pages.flatMap(page => classifyCduPage(page.url, page.html) === 'business' ? selectCduTables(input.domain, readCduPageTables(page.html)) : [])
       if (!tables.length) {
         await this.verifyAccount()
-        this.window?.show()
+        if (!input.background) this.window?.show()
         return { success: false, error: '未读取到目标表格。请在学校窗口打开对应页面，加载所需学期和分页后重新读取' }
       }
       // 页面上的学期需要用户核对；不能把请求参数当成服务器已执行的筛选。
