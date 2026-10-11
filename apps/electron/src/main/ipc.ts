@@ -4918,6 +4918,56 @@ export function registerIpcHandlers(): void {
     }
   )
 
+  // 解析双平行拓扑引用锚点（如 #f1:p1-b11 或 #p1-b11），反查目标 PDF 文件路径、页码与归一化 BBox 坐标
+  ipcMain.handle(
+    'file:resolve-document-anchor',
+    async (
+      _,
+      anchor: string,
+      access?: (FileAccessOptions & { label?: string }) | string[],
+    ): Promise<import('./lib/document-parse-tools').ResolvedDocumentAnchor | null> => {
+      if (typeof anchor !== 'string' || !anchor.trim()) return null
+      const { resolveDocumentAnchor } = await import('./lib/document-parse-tools')
+      const options = normalizeFileAccessOptions(access)
+      const label =
+        access && !Array.isArray(access) && typeof access === 'object' && typeof access.label === 'string'
+          ? access.label
+          : undefined
+
+      const candidateDirs: string[] = []
+      const fallbackFiles: string[] = []
+      const addDir = (dir?: string) => {
+        if (dir && !candidateDirs.includes(dir)) candidateDirs.push(dir)
+      }
+
+      if (options?.sessionId) {
+        const meta = getAgentSessionMeta(options.sessionId)
+        const workspace = meta?.workspaceId ? getAgentWorkspace(meta.workspaceId) : undefined
+        const slug = workspace?.slug || 'default'
+        addDir(getAgentSessionWorkspacePath(slug, options.sessionId))
+        for (const root of getFileSearchRoots(options.sessionId)) addDir(root)
+        if (meta?.attachedFiles) fallbackFiles.push(...meta.attachedFiles)
+        if (workspace?.slug) {
+          fallbackFiles.push(...getWorkspaceAttachedFiles(workspace.slug))
+        }
+      }
+
+      for (const base of getAllowedCandidateBasePaths(options) ?? []) {
+        addDir(base)
+      }
+
+      const resolved = resolveDocumentAnchor(anchor, {
+        candidateDirs,
+        fallbackFiles,
+        label,
+      })
+      if (!resolved || !isPreviewPathAllowed(resolved.filePath, options)) {
+        return null
+      }
+      return resolved
+    },
+  )
+
   // DOCX 转 HTML（内联预览使用 mammoth）
   ipcMain.handle(
     'file:docx-to-html',
