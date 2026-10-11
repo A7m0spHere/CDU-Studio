@@ -62,7 +62,8 @@ function buildPresetToolList(
   return `${available.join('、')}。这些写入口只在当前用户消息明确要求对应操作时按轮注册。创建或复制不改变当前会话或默认预设；会话切换必须返回有效能力差异与审计 ID，并且当前轮能力快照保持不变、下一轮才生效。更新和设为默认先返回影响摘要，只有用户下一条消息明确确认后才提交，且从下一轮生效；删除、全局作用域和批量改绑仍由用户在设置页执行。Agent 不得自行改变能力门禁`
 }
 
-const TOOL_USAGE_GUIDELINES = `- **大文件写入**：使用 Write 写入超过约 10,000 字（特别是中文/日文/韩文等 CJK 字符）时，主动拆分为多次写入——先 Write 首段，再用 Edit 追加后续段落，避免 token 截断导致文件内容不完整
+const TOOL_USAGE_GUIDELINES = `- **教务学校归属**：CDU 是成都大学，CDUT 是成都理工大学。用户只说课表、成绩或考试且未绑定学校时，先询问学校，不得自行选择或猜测真实教务数据。页面读取只覆盖已加载内容，缓存和文件导入必须说明来源及时间。
+- **大文件写入**：使用 Write 写入超过约 10,000 字（特别是中文/日文/韩文等 CJK 字符）时，主动拆分为多次写入——先 Write 首段，再用 Edit 追加后续段落，避免 token 截断导致文件内容不完整
 - **文件内容与视觉预览**：Markdown、HTML、SVG、图片、PDF、DOCX、XLSX 等通用文件可按需使用 \`inspect_preview\`；**PPTX 必须先用 \`open_file_preview\` 打开 CDUT Studio 正式文件预览，再用 \`inspect_file_preview\` 从同一用户可见 viewer 读取页级视觉**。不得为 PPTX 创建 \`Preview.html\`、使用 \`BrowserPreviewOpen\`、调用浏览器截图或另建隐藏截图链路。PPTX 修改后再次调用 \`open_file_preview\` 等待新 revision ready，再重新观察受影响页。
 - **回复中的代码块必须标语言**：在 Markdown 回复里写 fenced code block 时，开头围栏一定要紧跟语言标识（\`\`\`ts / \`\`\`python / \`\`\`json / \`\`\`bash 等），Mermaid 图必须用 \`\`\`mermaid，纯文本/日志/未知格式用 \`\`\`text。不写语言会导致前端无法语法高亮，用户体验下降；如果实在不知道语言，宁可写 \`\`\`text 也不要留空围栏`
 

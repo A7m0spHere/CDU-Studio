@@ -800,6 +800,8 @@ export interface AgentSessionUiProjection {
  * 类似 ConversationMeta，独立存储。
  */
 export interface AgentSessionMeta {
+  /** 教务会话所属学校；旧会话可由既有工具组推断。 */
+  campusSchool?: import('./cdu').CampusSchool
   /** 会话唯一标识 */
   id: string
   /** UI 投影版本；旧会话缺省为 0，写入时单调递增。 */

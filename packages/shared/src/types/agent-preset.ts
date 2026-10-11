@@ -270,6 +270,15 @@ export const AGENT_PRESET_CAPABILITY_GROUPS = [
     ],
   }),
   capabilityGroup({
+    id: 'cdu-tools', label: 'CDU 只读教务', hint: '成都大学个人资料、课表、成绩和考试安排；校园直连、原生认证',
+    tools: [
+      capabilityTool('cdu_profile', 'CDU 个人资料', '读取本人学籍资料', 'read'),
+      capabilityTool('cdu_schedule', 'CDU 课表', '读取学校当前页面课表', 'read'),
+      capabilityTool('cdu_grades', 'CDU 成绩', '读取本人课程成绩', 'read'),
+      capabilityTool('cdu_exams', 'CDU 考试安排', '读取本人考试安排', 'read'),
+    ],
+  }),
+  capabilityGroup({
     id: 'cdut-tools',
     label: 'CDUT 专区教务与反代工具',
     hint: '包含成都理工大学青果教务系统 8 大业务域及专属反代 AI 工具，调用受特区账户登录门禁保护',

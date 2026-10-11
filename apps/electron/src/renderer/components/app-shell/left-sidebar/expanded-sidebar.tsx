@@ -181,6 +181,13 @@ export function ExpandedSidebar({ s }: { s: SidebarModel }): React.ReactElement 
         </button>
       </div>
 
+      <div className="px-3 pb-1.5 titlebar-no-drag">
+        <button type="button" data-profer-navigation-region="mode-switcher-cdu" onClick={() => setActiveView('cdu-zone')}
+          className={cn('flex h-9 w-full items-center justify-center gap-2 rounded-xl px-3 text-[13px] transition-colors', activeView === 'cdu-zone' ? 'bg-primary text-primary-foreground shadow-sm' : 'bg-primary/5 text-foreground/70 hover:bg-primary/10')}>
+          <GraduationCap size={15} /><span>CDU 专区</span>
+        </button>
+      </div>
+
       {/* 新对话/新会话按钮 + 搜索按钮 */}
       <div className="px-3 pt-2 flex items-center gap-1.5">
         <button

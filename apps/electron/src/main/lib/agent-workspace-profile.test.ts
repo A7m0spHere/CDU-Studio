@@ -8,6 +8,9 @@ mock.module('electron', () => ({
   safeStorage: { isEncryptionAvailable: () => false },
 }))
 
+// 档案迁移不涉及删除会话，隔离该边界，避免加载整套主进程服务。
+mock.module('./agent-session-manager', () => ({ deleteAgentSessionsByWorkspace: () => 0 }))
+
 const {
   createAgentWorkspace,
   getWorkspaceMemorySummary,

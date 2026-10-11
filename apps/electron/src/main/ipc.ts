@@ -1,3 +1,5 @@
+import { registerCduIpc } from './lib/cdu/cdu-ipc'
+import { cduService } from './lib/cdu/cdu-service'
 /**
  * IPC 处理器模块
  *
@@ -1295,6 +1297,7 @@ export function registerIpcHandlers(): void {
     return
   }
   _ipcHandlersRegistered = true
+  registerCduIpc(getMainWindow)
 
   restoreGoalStatesOnce()
 
@@ -2600,6 +2603,7 @@ export function registerIpcHandlers(): void {
     PROXY_IPC_CHANNELS.UPDATE_SETTINGS,
     async (_, config: ProxyConfig): Promise<void> => {
       await saveProxySettings(config)
+      await cduService.network.reset()
     }
   )
 

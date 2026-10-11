@@ -5,7 +5,7 @@
  */
 
 import * as React from 'react'
-import { PanelLeftOpen, Bot, Plus, Search, CalendarDays, Blocks } from 'lucide-react'
+import { PanelLeftOpen, Bot, Plus, Search, CalendarDays, Blocks, GraduationCap } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Tooltip, TooltipTrigger, TooltipContent } from '@profer/ui/primitives/tooltip'
 import { CollapsedWorkspacePopover } from '@/components/agent/CollapsedWorkspacePopover'
@@ -25,6 +25,7 @@ export function SidebarRail({ s }: { s: SidebarModel }): React.ReactElement {
     automationCount,
     handleOpenAutomations,
     activeView,
+    setActiveView,
     handleOpenSkills,
     capabilities,
     setSettingsOpen,
@@ -80,6 +81,13 @@ export function SidebarRail({ s }: { s: SidebarModel }): React.ReactElement {
         </div>
 
         <div className="my-3 h-px w-8 bg-border/70" />
+
+        <Tooltip><TooltipTrigger asChild>
+          <button type="button" aria-label="CDU 专区" onClick={() => setActiveView('cdu-zone')}
+            className={cn('size-10 flex items-center justify-center rounded-xl titlebar-no-drag', activeView === 'cdu-zone' ? 'bg-primary/10 text-primary' : 'text-foreground/60 hover:bg-muted')}>
+            <GraduationCap size={18} />
+          </button>
+        </TooltipTrigger><TooltipContent side="right">CDU 专区 · 成都大学</TooltipContent></Tooltip>
 
         {/* 高频操作 */}
         <div className="flex flex-col items-center gap-1.5">

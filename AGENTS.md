@@ -340,3 +340,15 @@ CDUT 内网青果教务系统部署有瑞数（RuiShu）动态安全反爬 WAF�
 - **macOS arm64 验收**：`.github/workflows/macos-package.yml` 手动触发，仅产出无签名、无公证的 arm64 验收包（Actions Artifact），需用户明确确认后方可作为测试资产加入 Pre-release，不进入 Windows 国内更新源。
 - **构建验证 workflow**：`release.yml` 为仅手动触发的构建验证，绝不因 tag 自动构建或写入 GitHub Release。
 - **辅助脚本/校验**：`scripts/verify-release-preflight.cjs`（发版预检）、`scripts/release-asset-contract.cjs`（资产契约）、`scripts/build-releases-json.cjs`（`release:releases-json`）、`scripts/push-mac-release.cjs`（`release:mac`）。
+
+
+### CDU 专区（成都大学，首版接入）
+
+- 与 CDUT 专区并存；CDU 通过 `CDU_ZONE_IPC_CHANNELS` → `window.electronAPI.cduZone` → Jotai `cdu-atoms.ts` 接入，服务集中在 `main/lib/cdu/`。
+- `persist:cdu-auth-zone` 统一等待 `setProxy({ mode: 'direct' })` 和关闭旧连接后再导航/请求；全局代理修改后重新保持直连。应用不自动修改 Clash 配置；TUN 与 Fake-IP 需要用户本机持久化域名规则。
+- 登录由隔离的原生学校窗口完成，支持数智教务和官方 WebVPN 入口；登录后自动打开 VPN 数智教务资源、继续统一认证和只读个人信息导航，SPA 登录态由有界快照轮询检测。校园 HTTPS 弹窗和先开空白页的转发握手保持同一隔离 Session，支持学校实际教务转发子域；应用 IPC 不接触、保存或注入学校密码。只有业务表格与本人学号、姓名同时读取成功才标记 `active`，SSO 跳转、HTTP 200 或离开登录页不能代表成功。重启后为未验证状态。
+- 旧版学校 WebVPN 的 HTTP 8118 转发默认阻止。仅在用户阅读风险并明确确认后，当前运行可放行编码为 CDU 资源的 `*.vpn.cdu.edu.cn:8118` 转发域名；普通校园 HTTP、其他端口与外部目标仍拒绝，退出账户或重启撤销授权。不绕过证书校验；可改用校园网或学校官方 SSL VPN 客户端。
+- 四个只读域：个人资料、课表、成绩、考试安排。当前采用已登录页面表格及学籍卡片提取，支持超星业务顶栏身份、iframe 与 EasyUI 分离表头/冻结列；再次连接优先复用业务窗口。尚未验证真实业务 API。仅提取已加载内容，不自动完成学校学期筛选、分页或承诺完整记录；结果标注 `visible`，学期来自学校可见筛选或成绩行，无法识别时标注“学校当前页面”；跨学期成绩按行内真实学期分存缓存。读取时检查过期、维护及账户变化。
+- CSV、HTML 和 XLSX 导入复用现有 Cheerio / Silurus OOXML；先预览后确认。结果显示账户、学期、来源和时间。`cdu-account.json` 仅保存账户摘要；`cdu-cache/<学号>/<学期哈希>/<类别>.json` 原子写入，登出清理该账户缓存和认证分区。不同账户缓存与 CDUT 数据隔离。
+- Agent 四个工具为 `cdu_profile`、`cdu_schedule`、`cdu_grades`、`cdu_exams`，与界面共用服务。显式校名优先，其次会话 `campusSchool` 绑定；没有学校时询问选择。禁止仅凭“课表/成绩”等通用词默认激活 CDUT，CDU 会话不能执行 CDUT 教务工具。
+- 在线个人数据尚需用户本人完成学校登录并核对。直连可达性与业务认证分别验收；HTTP 200 内含 403 按站点拒绝处理。详见 `docs/cdu-integration.md`。

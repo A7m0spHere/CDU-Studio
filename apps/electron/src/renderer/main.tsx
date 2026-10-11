@@ -1,3 +1,4 @@
+import { useCduAccountHydration } from './hooks/useCduAccountHydration'
 /**
  * 渲染进程入口
  *
@@ -625,6 +626,7 @@ function AgentListenersInitializer(): null {
   useGlobalAgentListeners()
   // CDUT 特区账户全局水合：让聊天中的 CDUT 学籍证件照（本地已保存头像）随时可渲染
   useCdutAccountHydration()
+  useCduAccountHydration()
   // 浏览器列里文件预览的划词由主进程转投过来，落进与预览面板同一个引用 atom
   useBrowserLocalFileSelectionQuote()
   // 换皮肤时让已打开的文件预览跟上（受管浏览器里的普通网页不跟）

@@ -1,4 +1,4 @@
-import { describe, expect, mock, test } from 'bun:test'
+import { afterAll, describe, expect, mock, test } from 'bun:test'
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -7,11 +7,20 @@ import { join } from 'node:path'
 mock.module('electron', () => ({
   app: { getPath: () => tmpdir(), isPackaged: false },
   net: {},
+  dialog: {},
+  shell: {},
+  BrowserWindow: { getAllWindows: () => [] },
 }))
 
 // 隔离配置根目录：安装目标必须落在临时目录，绝不能写真实 ~/.cdutai-dev/skins。
 const configRoot = mkdtempSync(join(tmpdir(), 'cdut-skin-manager-config-'))
+const previousConfigRoot = process.env.PROFER_CONFIG_DIR
 process.env.PROFER_CONFIG_DIR = configRoot
+afterAll(() => {
+  if (previousConfigRoot === undefined) delete process.env.PROFER_CONFIG_DIR
+  else process.env.PROFER_CONFIG_DIR = previousConfigRoot
+  rmSync(configRoot, { recursive: true, force: true })
+})
 
 const { installSkinFromFolder } = await import('./skin-manager-service')
 

@@ -1,3 +1,4 @@
+import { buildPiCduTools } from '../cdu/cdu-tools'
 /**
  * Pi Runtime 内置 MCP 工具桥接层
  *
@@ -2150,11 +2151,21 @@ export async function buildPiBuiltinTools(
   // 是否登录由 checkCdutGatekeeper 依特区账户状态自动拦截，无需提示词层干预。
   if (isGroupActive('cdut-tools')) {
     try {
-      tools.push(...buildPiCdutTools(sdk, ctx))
+      const cdutTools = buildPiCdutTools(sdk, ctx)
+      for (const tool of cdutTools) {
+        const execute = tool.execute
+        tool.execute = async (...args) => {
+          if (getAgentSessionMeta(ctx.sessionId)?.campusSchool === 'cdu') return textToolResult('当前会话属于 CDU，不能调用 CDUT 工具。请用户明确切换学校后再查询。')
+          return execute(...args)
+        }
+      }
+      tools.push(...cdutTools)
     } catch (error) {
       console.error('[Pi 桥接] 注入 CDUT 教务工具失败:', error)
     }
   }
+
+  if (isGroupActive('cdu-tools')) tools.push(...buildPiCduTools(sdk, ctx.sessionId))
 
   // 14. 速课堂学习工具（study）
   if (ctx.isStudyClass) {

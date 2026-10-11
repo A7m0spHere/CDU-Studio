@@ -6,6 +6,7 @@
  */
 
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { CDU_ZONE_IPC_CHANNELS as CDU, type CduZoneAPI } from '@profer/shared'
 import { IPC_CHANNELS, REVIEW_IPC_CHANNELS, CHANNEL_IPC_CHANNELS, CHAT_IPC_CHANNELS, AGENT_IPC_CHANNELS, LARK_IPC_CHANNELS, ENVIRONMENT_IPC_CHANNELS, INSTALLER_IPC_CHANNELS, PROXY_IPC_CHANNELS, GITHUB_RELEASE_IPC_CHANNELS, CHANGELOG_IPC_CHANNELS, SYSTEM_PROMPT_IPC_CHANNELS, CHAT_TOOL_IPC_CHANNELS, FEISHU_IPC_CHANNELS, DINGTALK_IPC_CHANNELS, WECHAT_IPC_CHANNELS, AUTOMATION_IPC_CHANNELS, RECOMMENDATION_IPC_CHANNELS, PLANNING_IPC_CHANNELS, AUTH_IPC_CHANNELS, SYNC_IPC_CHANNELS, TEAM_IPC_CHANNELS, SKILL_MARKETPLACE_IPC_CHANNELS, SKILL_MASTER_IPC_CHANNELS, GLOBAL_SKILL_IPC_CHANNELS, TEAM_FILE_IPC_CHANNELS, TEAM_MEMORY_IPC_CHANNELS, SSE_IPC_CHANNELS, KNOWLEDGE_IPC_CHANNELS, AGENT_PRESET_IPC_CHANNELS, type Todo, type CalendarEvent, type TodoListQuery, type CalendarEventListQuery, type PlanningGroup, type PlanningGroupScope, type PlanningTag, type PlanningReminder, type ActivePlanningReminder, type PlanningAgentOperation, type PlanningChange, type CreateTodoInput, type UpdateTodoInput, type CreateCalendarEventInput, type UpdateCalendarEventInput, type CreatePlanningGroupInput, type UpdatePlanningGroupInput, type CreatePlanningTagInput, type UpdatePlanningTagInput, type SnoozePlanningReminderInput, type StartTodoAgentInput, type StartTodoAgentResult, type TodoAgentSessionActivation, type TeamMemoryApiResult, type TeamMemoryDocument, type TeamMemoryRevision, type ChangelogEntry, type AgentPreset, type AgentPresetCreateInput, type AgentPresetUpdateInput, type AgentPresetImportResult } from '@profer/shared'
 import { USER_PROFILE_IPC_CHANNELS, SETTINGS_IPC_CHANNELS, SKIN_IPC_CHANNELS, SCRATCH_PAD_IPC_CHANNELS, APP_ICON_IPC_CHANNELS, DOCK_BADGE_IPC_CHANNELS, STORAGE_IPC_CHANNELS, NOTIFICATION_SOUND_IPC_CHANNELS, DESKTOP_NOTIFICATION_IPC_CHANNELS } from '../types'
 import type { CustomNotificationSound } from '../types'
@@ -1538,7 +1539,9 @@ export interface ElectronAPI {
     purgeTrash: (workspaceId: string, entryId: string) => Promise<{ ok: boolean; status?: number; data?: { success: boolean; state: string }; error?: string }>
   }
 
-  // ===== CDUT 专区特区账户 =====
+  // ===== CDU 原生认证与只读教务 =====
+  cduZone: CduZoneAPI
+
   cdutZone: {
     getAccount: () => Promise<CdutAccountProfile>
     /** 查询本地已保存的特区账户元数据（供登录窗一键填充引导） */
@@ -3647,7 +3650,25 @@ const electronAPI: ElectronAPI = {
     purgeTrash: (workspaceId: string, entryId: string) => ipcRenderer.invoke(TEAM_FILE_IPC_CHANNELS.PURGE_TRASH, workspaceId, entryId),
   },
 
-  // ===== CDUT 专区特区账户 =====
+  // ===== CDU 原生认证与只读教务 =====
+  cduZone: {
+    getAccount: () => ipcRenderer.invoke(CDU.GET_ACCOUNT),
+    openLogin: (mode) => ipcRenderer.invoke(CDU.OPEN_LOGIN, mode),
+    approveLegacyVpnHttp: () => ipcRenderer.invoke(CDU.APPROVE_LEGACY_VPN_HTTP),
+    verifyAccount: () => ipcRenderer.invoke(CDU.VERIFY),
+    logout: () => ipcRenderer.invoke(CDU.LOGOUT),
+    query: (input) => ipcRenderer.invoke(CDU.QUERY, input),
+    diagnose: () => ipcRenderer.invoke(CDU.DIAGNOSE),
+    previewImport: (input) => ipcRenderer.invoke(CDU.PREVIEW_IMPORT, input),
+    commitImport: (token) => ipcRenderer.invoke(CDU.COMMIT_IMPORT, token),
+    clearCache: (accountId) => ipcRenderer.invoke(CDU.CLEAR_CACHE, accountId),
+    startConversation: () => ipcRenderer.invoke(CDU.START_CONVERSATION),
+    onStatusChanged: (callback) => {
+      const listener = (_event: Electron.IpcRendererEvent, profile: Parameters<typeof callback>[0]) => callback(profile)
+      ipcRenderer.on(CDU.STATUS_CHANGED, listener)
+      return () => ipcRenderer.removeListener(CDU.STATUS_CHANGED, listener)
+    },
+  } satisfies CduZoneAPI,
   cdutZone: {
     getAccount: () => ipcRenderer.invoke(CDUT_ZONE_IPC_CHANNELS.GET_ACCOUNT),
     getSavedAccount: () => ipcRenderer.invoke(CDUT_ZONE_IPC_CHANNELS.GET_SAVED_ACCOUNT),

@@ -1,3 +1,4 @@
+import { resolveCampusSchool } from './cdu/campus-routing'
 /**
  * AgentOrchestrator — Agent 编排层
  *
@@ -799,9 +800,15 @@ export class AgentOrchestrator {
 
     const text = userMessage || ''
 
-    // 1. CDUT 教务专区/关键词探测
-    if (/(?:课表|成绩|教室|自习|学分|选课|教务|考务|考试|培养方案|cdut|青果)/i.test(text)) {
-      activeGroups.add('cdut-tools')
+    // 1. 明确学校后才激活教务工具；禁止通用关键词自动指向 CDUT。
+    const school = resolveCampusSchool(text, meta?.campusSchool, meta?.activatedToolGroups)
+    activeGroups.delete('cdu-tools')
+    activeGroups.delete('cdut-tools')
+    if (school) {
+      if (meta?.campusSchool !== school) updateAgentSessionMeta(sessionId, { campusSchool: school })
+      if (/(?:课表|成绩|教室|自习|学分|选课|教务|考务|考试|培养方案|\bcdu\b|\bcdut\b|成都大学|成都理工大学|青果)/i.test(text) || meta?.campusSchool) {
+        activeGroups.add(`${school}-tools`)
+      }
     }
 
     // 2. 受管浏览器关键词/上下文探测

@@ -622,3 +622,22 @@ describe('Pi builtin tools disabledToolGroups pruning (preset capability pruning
     expect(result.details?.tabs).toEqual([])
   })
 })
+
+describe('CDU 工具暴露边界', () => {
+  test('仅激活 CDU 分组时挂载四个只读工具，不挂载 CDUT', async () => {
+    const { sdk, tools } = createPiSdkStub()
+    await buildPiBuiltinTools(sdk, { sessionId: 'cdu-boundary-test', channelId: 'test-channel', workspaceSlug: 'pi-test-ws', triggeredBy: 'user', activeToolGroups: new Set(['cdu-tools']) })
+    const names = tools.map(tool => tool.name)
+    expect(names.filter(name => name.startsWith('cdu_'))).toEqual(['cdu_profile', 'cdu_schedule', 'cdu_grades', 'cdu_exams'])
+    expect(names.some(name => name.startsWith('cdut_'))).toBe(false)
+    const result = await tools.find(tool => tool.name === 'cdu_grades')?.execute?.('test', {})
+    expect(JSON.stringify(result)).toContain('尚未绑定成都大学')
+  })
+  test('无校园激活组时两校均不挂载，预设禁用 CDU 优先', async () => {
+    for (const config of [{ activeToolGroups: new Set<string>() }, { activeToolGroups: new Set(['cdu-tools']), disabledToolGroups: ['cdu-tools'] }]) {
+      const { sdk, tools } = createPiSdkStub()
+      await buildPiBuiltinTools(sdk, { sessionId: 'cdu-boundary-test', channelId: 'test-channel', workspaceSlug: 'pi-test-ws', triggeredBy: 'user', ...config })
+      expect(tools.some(tool => /^(cdu_|cdut_)/.test(tool.name))).toBe(false)
+    }
+  })
+})

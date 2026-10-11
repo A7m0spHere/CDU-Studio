@@ -1,3 +1,4 @@
+import { CduZoneView } from '@/components/cdu-zone/CduZoneView'
 /**
  * MainArea — 主内容区域
  *
@@ -310,6 +311,8 @@ export function MainArea(): React.ReactElement {
         ) : activeView === 'agent-skills' ? (
           // Agent 技能视图：全屏取代 TabBar + TabContent
           <AgentSkillsView />
+        ) : activeView === 'cdu-zone' ? (
+          <CduZoneView />
         ) : activeView === 'cdut-zone' ? (
           // CDUT 专区：全屏视图（特区账户登录 + 专区内容）
           <CdutZoneView />
