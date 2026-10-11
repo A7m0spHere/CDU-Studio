@@ -15,7 +15,6 @@
 import { existsSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { pathToFileURL } from 'node:url'
 import type {
   StudentCognitionProfile,
   StudyDocumentOutline,
@@ -172,47 +171,23 @@ interface PdfPage {
   text: string
 }
 
-/** 使用 pdfjs-dist 逐页提取 PDF 文本，从而得到可靠页码范围 */
+/** 使用 @profer/core 高精解析引擎逐页提取 PDF 文本，从而得到可靠页码范围 */
 async function extractPdfPages(filePath: string): Promise<PdfPage[]> {
-  const pdfjs = (await import('pdfjs-dist/legacy/build/pdf.mjs')) as unknown as {
-    GlobalWorkerOptions: { workerSrc: string }
-    getDocument: (options: Record<string, unknown>) => { promise: Promise<PdfDocument> }
+  const { parsePdfDocument } = await import('@profer/core/pdf-engine')
+  const ast = await parsePdfDocument(readFileSync(filePath), { fileName: basename(filePath) })
+
+  // 引擎给出的是跨页线性阅读序列；按页聚合即可还原每页正文。
+  const textByPage = new Map<number, string[]>()
+  for (const block of ast.readingOrderedBlocks) {
+    const bucket = textByPage.get(block.pageNumber)
+    if (bucket) bucket.push(block.text)
+    else textByPage.set(block.pageNumber, [block.text])
   }
-  pdfjs.GlobalWorkerOptions.workerSrc = pathToFileURL(require.resolve('pdfjs-dist/legacy/build/pdf.worker.mjs')).href
 
-  const buffer = readFileSync(filePath)
-  const pdf = await pdfjs.getDocument({
-    data: new Uint8Array(buffer),
-    disableFontFace: true,
-    isEvalSupported: false,
-    useWorkerFetch: false,
-  }).promise
-
-  try {
-    const pages: PdfPage[] = []
-    for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber++) {
-      const page = await pdf.getPage(pageNumber)
-      const content = await page.getTextContent()
-      const parts: string[] = []
-      for (const item of content.items) {
-        if (typeof item !== 'object' || item === null) continue
-        const textItem = item as { str?: unknown; hasEOL?: unknown }
-        if (typeof textItem.str !== 'string') continue
-        parts.push(textItem.str)
-        if (textItem.hasEOL === true) parts.push('\n')
-      }
-      pages.push({ pageNumber, text: parts.join(' ').replace(/[ \t]+\n/g, '\n').trim() })
-    }
-    return pages
-  } finally {
-    await pdf.destroy()
-  }
-}
-
-interface PdfDocument {
-  numPages: number
-  getPage: (pageNumber: number) => Promise<{ getTextContent: () => Promise<{ items: unknown[] }> }>
-  destroy: () => Promise<void>
+  return ast.pages.map((page) => ({
+    pageNumber: page.pageNumber,
+    text: (textByPage.get(page.pageNumber) ?? []).join('\n\n').trim(),
+  }))
 }
 
 /** 把 PDF 每 N 页聚合为一个章节块 */
@@ -425,9 +400,14 @@ export async function ingestStudyDocuments(
           rawSections = buildImageSection(filePath)
         }
       } else if (fileType === 'pdf') {
-        // PDF 保留物理页码范围（对大纲导航有价值），正文仍经纯化
-        const pages = await extractPdfPages(filePath)
-        if (pages.length > 0) {
+        // PDF 保留物理页码范围（对大纲导航有价值）；正文由高精引擎分栏感知提取
+        let pages: PdfPage[] = []
+        try {
+          pages = await extractPdfPages(filePath)
+        } catch (error) {
+          console.warn(`[速课堂索引] PDF 高精解析失败，回退通用提取: ${filePath}`, error)
+        }
+        if (pages.some((page) => page.text.length > 0)) {
           rawSections = splitPdfPages(pages)
           fullMarkdown = normalizeToMarkdown(pages.map((page) => page.text).filter(Boolean).join('\n\n'))
         } else {

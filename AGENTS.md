@@ -49,7 +49,7 @@ CDUT-Studio/
 │   ├── agent-fabric/  # Agent 编排契约与纯函数行为 (@profer/agent-fabric)
 │   ├── project-core/  # 项目级图构建、状态重放与查询 (@profer/project-core)
 │   ├── session-core/  # headless session 读取/分组/搜索/渲染 (@profer/session-core)
-│   ├── core/          # AI Provider 适配器、代码高亮服务 (@profer/core)
+│   ├── core/          # AI Provider 适配器、代码高亮、PDF 解析引擎 (@profer/core)
 │   └── ui/            # 共享 UI 组件库 (@profer/ui)
 └── apps/
     ├── electron/      # Electron 桌面应用主体 (@profer/electron)

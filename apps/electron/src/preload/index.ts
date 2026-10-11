@@ -1103,6 +1103,20 @@ export interface ElectronAPI {
   /** 为内联 PDF 预览生成临时 HTML 文件，返回文件路径 */
   preparePdfPreview: (filePath: string, access?: import('@profer/shared').FileAccessOptions) => Promise<{ tmpHtmlUrl: string } | null>
 
+  /** 解析双平行拓扑引用锚点（如 #f1:p1-b11 或 #p1-b11），反查目标 PDF 文件路径、页码与归一化 BBox 坐标 */
+  resolveDocumentAnchor: (
+    anchor: string,
+    access?: import('@profer/shared').FileAccessOptions & { label?: string },
+  ) => Promise<{
+    fileId: string
+    filePath: string
+    fileName: string
+    pageNumber: number
+    blockId: string
+    bbox?: [number, number, number, number]
+    label?: string
+  } | null>
+
   /** 读取文件为 base64（带路径校验，供内联图片预览等） */
   readBinaryBase64: (filePath: string, access?: import('@profer/shared').FileAccessOptions, maxSize?: number) => Promise<string | null>
 
@@ -2958,6 +2972,21 @@ const electronAPI: ElectronAPI = {
 
   preparePdfPreview: (filePath: string, access?: import('@profer/shared').FileAccessOptions) => {
     return ipcRenderer.invoke('file:prepare-pdf-preview', filePath, access) as Promise<{ tmpHtmlUrl: string } | null>
+  },
+
+  resolveDocumentAnchor: (
+    anchor: string,
+    access?: import('@profer/shared').FileAccessOptions & { label?: string },
+  ) => {
+    return ipcRenderer.invoke('file:resolve-document-anchor', anchor, access) as Promise<{
+      fileId: string
+      filePath: string
+      fileName: string
+      pageNumber: number
+      blockId: string
+      bbox?: [number, number, number, number]
+      label?: string
+    } | null>
   },
 
   readBinaryBase64: (filePath: string, access?: import('@profer/shared').FileAccessOptions, maxSize?: number) => {
