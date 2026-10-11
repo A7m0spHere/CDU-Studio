@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import type { CduDataset } from '@profer/shared'
 import { CalendarDays, BookOpen, ChevronLeft, ChevronRight } from 'lucide-react'
 import { Button } from '@profer/ui/primitives/button'
@@ -7,13 +7,9 @@ import { useCduScheduleCalendar } from '@/hooks/useCduScheduleCalendar'
 import { CduDataTables } from './CduDataTables'
 import { CduScheduleToolbar } from './CduScheduleToolbar'
 import { CduWeekGrid } from './CduWeekGrid'
+import { cduCourseHue, cduCourseTime, describeCduCourse } from '@/lib/cdu-course-presentation'
 
 const weekdays = ['星期一', '星期二', '星期三', '星期四', '星期五', '星期六', '星期日']
-function periodRange(periods: string[], start: number, span: number): string {
-  const first = periods[start]!.split(' / '); const last = periods[start + span - 1]!.split(' / ')
-  const slots = /^\d+$/.test(first[0]!) ? `第 ${first[0]}${span > 1 ? `–${last[0]}` : ''} 节` : `${first[0]}${span > 1 ? ` — ${last[0]}` : ''}`
-  return first[1] && last[2] ? `${first[1]}–${last[2]} · ${slots}` : slots
-}
 
 /** 周课表与日程共用同一份本地源数据，未知周次单列，日期只采用已核对校历。 */
 export function CduScheduleView({ data }: { data: CduDataset }): React.ReactElement {
@@ -30,9 +26,11 @@ export function CduScheduleView({ data }: { data: CduDataset }): React.ReactElem
         <div className="flex gap-2"><Button size="icon" variant="ghost" aria-label="前一天" disabled={view.week === 1 && view.day === 1} onClick={() => view.shiftDay(-1)}><ChevronLeft size={16} /></Button><Button size="icon" variant="ghost" aria-label="后一天" disabled={view.week === view.totalWeeks && view.day === 7} onClick={() => view.shiftDay(1)}><ChevronRight size={16} /></Button></div>
       </header>
       {!daily.length && <p className="rounded-xl bg-background p-6 text-sm text-muted-foreground">当前日期没有匹配到课程，周次待确认的内容在下方单列。</p>}
-      <div className="grid gap-3 lg:grid-cols-2">{daily.map(({ grid, gridIndex, block }) => <article key={`${gridIndex}:${block.start}`} className="rounded-2xl bg-card p-5 shadow-sm">
-        <p className="text-xs leading-6 text-muted-foreground">{periodRange(grid.periods, block.start, block.span)}</p>
-        <h4 className="mt-2 text-sm font-semibold">{block.title}</h4><p className="mt-3 whitespace-pre-wrap break-words text-xs leading-7 text-muted-foreground">{block.text}</p>
+      <div className="grid gap-3 lg:grid-cols-2">{daily.map(({ grid, gridIndex, block }) => <article key={`${gridIndex}:${block.start}`} className="cdu-course-card p-4" style={{ '--cdu-course-hue': cduCourseHue(block.entries[0]?.title || block.title) } as CSSProperties}>
+        <p className="text-xs leading-6 opacity-75">{cduCourseTime(grid.periods, block.start, block.span)}</p>
+        <h4 className="mt-2 text-sm font-semibold">{block.title}</h4>
+        {block.entries.map((entry, index) => { const fields = describeCduCourse(entry); return <p key={index} className="mt-3 text-xs leading-6 opacity-80">{[fields.location, fields.teacher].filter(Boolean).join(' · ') || '查看原始安排'}{block.entries.length > 1 ? ` · ${entry.title}` : ''}</p> })}
+        <details className="mt-3 text-[11px] opacity-75"><summary className="cursor-pointer">学校原始记录</summary><p className="mt-2 whitespace-pre-wrap break-words leading-6">{block.text}</p></details>
       </article>)}</div>
     </section> : model.grids.map((grid, index) => <CduWeekGrid key={index} grid={grid} view={view} />)}
     {!!model.courses.length && <section className="space-y-3"><h3 className="text-sm font-semibold">本周未标具体日期的课程</h3><div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">{model.courses.map((course, index) => <article key={index} className="rounded-2xl bg-muted/35 p-5"><BookOpen size={17} className="mb-3 text-primary" /><h3 className="text-sm font-semibold">{course.title}</h3><dl className="mt-4 space-y-2">{course.details.map((detail, detailIndex) => <div key={detailIndex} className="text-xs leading-6"><dt className="text-muted-foreground">{detail.label}</dt><dd className="whitespace-pre-wrap break-words">{detail.value}</dd></div>)}</dl></article>)}</div></section>}

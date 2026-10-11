@@ -1,0 +1,41 @@
+.cdu-timetable-board {
+  --cdu-grid-line: hsl(var(--border) / 0.35);
+  background: hsl(var(--card));
+}
+
+.cdu-timetable-slot {
+  border-right: 1px solid var(--cdu-grid-line);
+  border-bottom: 1px solid var(--cdu-grid-line);
+}
+
+.cdu-timetable-slot.is-break {
+  border-top: 1px solid hsl(var(--border) / 0.8);
+}
+
+.cdu-course-card {
+  color: hsl(var(--cdu-course-hue) 43% 24%);
+  background: hsl(var(--cdu-course-hue) 66% 93%);
+  border: 1px solid hsl(var(--cdu-course-hue) 48% 84% / 0.65);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px hsl(var(--cdu-course-hue) 25% 25% / 0.04);
+  transition: background-color 150ms ease, box-shadow 150ms ease;
+}
+
+.cdu-course-card:hover {
+  background: hsl(var(--cdu-course-hue) 66% 90%);
+  box-shadow: 0 2px 6px hsl(var(--cdu-course-hue) 30% 25% / 0.1);
+}
+
+.cdu-course-title {
+  text-wrap: balance;
+}
+
+.dark .cdu-course-card {
+  color: hsl(var(--cdu-course-hue) 50% 88%);
+  background: hsl(var(--cdu-course-hue) 30% 20%);
+  border-color: hsl(var(--cdu-course-hue) 30% 35% / 0.7);
+}
+
+.dark .cdu-course-card:hover {
+  background: hsl(var(--cdu-course-hue) 32% 25%);
+}

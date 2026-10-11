@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react'
 
 /** 将课表高度限制在首屏剩余空间；只测量布局，不改变全局缩放或应用字号。 */
-export function useCduTimetableFit(rows: number, columns: number) {
+export function useCduTimetableFit(rows: number, columns: number, headerHeight = 32) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const element = ref.current
@@ -11,8 +11,8 @@ export function useCduTimetableFit(rows: number, columns: number) {
     let previousHeight = 0
     const measure = (): void => {
       const top = element.getBoundingClientRect().top + (scroller?.scrollTop || 0)
-      const minimum = Math.min(320, 32 + rows * 26)
-      const height = Math.max(minimum, Math.min(32 + rows * 42, Math.floor(window.innerHeight - top - 20)))
+      const minimum = Math.min(320, headerHeight + rows * 26)
+      const height = Math.max(minimum, Math.min(headerHeight + rows * 42, Math.floor(window.innerHeight - top - 20)))
       if (Math.abs(height - previousHeight) < 1) return
       previousHeight = height
       element.style.setProperty('--cdu-timetable-height', `${height}px`)
@@ -27,6 +27,6 @@ export function useCduTimetableFit(rows: number, columns: number) {
     window.addEventListener('resize', schedule)
     measure()
     return () => { observer.disconnect(); window.removeEventListener('resize', schedule); cancelAnimationFrame(frame) }
-  }, [rows, columns])
+  }, [rows, columns, headerHeight])
   return ref
 }

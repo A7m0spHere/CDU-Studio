@@ -87,13 +87,13 @@ export function CduZoneView(): React.ReactElement {
           </div>
         </section>}
 
-        <nav aria-label="CDU 教务类别" className={cn('grid', compactSchedule ? 'grid-cols-4 gap-2' : 'grid-cols-2 gap-3 lg:grid-cols-4')}>
-          {sections.map(({ domain: value, title, description, icon: Icon }) => <button key={value} disabled={!!busy} onClick={() => { setDomain(value); setPreview(null); setNotice('') }} className={cn('rounded-2xl text-left shadow-sm transition-colors disabled:opacity-60', compactSchedule ? 'flex items-center gap-2 px-3 py-2' : 'p-4', domain === value ? 'bg-primary/10 ring-1 ring-primary/20' : 'bg-card hover:bg-muted')}>
+        <nav aria-label="CDU 教务类别" className={cn('grid', compactSchedule ? 'grid-cols-4 gap-1 rounded-xl bg-muted/40 p-1' : 'grid-cols-2 gap-3 lg:grid-cols-4')}>
+          {sections.map(({ domain: value, title, description, icon: Icon }) => <button key={value} disabled={!!busy} onClick={() => { setDomain(value); setPreview(null); setNotice('') }} className={cn('text-left transition-colors disabled:opacity-60', compactSchedule ? 'flex items-center gap-2 rounded-lg px-3 py-2' : 'rounded-2xl p-4 shadow-sm', domain === value ? compactSchedule ? 'bg-card text-foreground shadow-sm' : 'bg-primary/10 ring-1 ring-primary/20' : compactSchedule ? 'text-muted-foreground hover:bg-card/60' : 'bg-card hover:bg-muted')}>
             <Icon size={compactSchedule ? 15 : 20} className={cn('shrink-0 text-primary', !compactSchedule && 'mb-3')} /><span className={cn('block font-semibold', compactSchedule ? 'text-xs' : 'text-sm')}>{title}</span>{!compactSchedule && <span className="mt-1 block text-xs text-muted-foreground">{description}</span>}
           </button>)}
         </nav>
 
-        <section className={cn('rounded-3xl bg-card shadow-sm', compactSchedule ? 'p-3' : 'p-6')}>
+        <section className={cn(compactSchedule ? 'bg-transparent' : 'rounded-3xl bg-card p-6 shadow-sm')}>
           <div className="flex flex-wrap items-center justify-between gap-4">
             <div><h2 className={cn('font-semibold', compactSchedule ? 'text-sm' : 'text-lg')}>{section.title}</h2>{!compactSchedule && <p className="mt-1 text-xs text-muted-foreground">同步与文件导入共用本地视图，重启后自动恢复已保存内容。</p>}</div>
             <div className="flex flex-wrap gap-2">{compactSchedule && account.status === 'active' && <Button size="sm" className="h-7 px-2 text-[11px]" variant="ghost" disabled={!!busy} onClick={() => void actions.query(false)}>刷新当前</Button>}<Button size={compactSchedule ? 'sm' : 'default'} className={compactSchedule ? 'h-7 px-2 text-[11px]' : undefined} disabled={!!busy || account.status !== 'active'} onClick={() => void actions.syncSchoolData()}><RefreshCw size={14} className="mr-2" />{compactSchedule ? '同步教务' : '同步教务到应用'}</Button><Button size={compactSchedule ? 'sm' : 'default'} className={compactSchedule ? 'h-7 px-2 text-[11px]' : undefined} variant="outline" disabled={!!busy} onClick={() => setImportOpen(!importOpen)}><FileUp size={14} className="mr-2" />导入文件</Button><Button size={compactSchedule ? 'sm' : 'default'} className={compactSchedule ? 'h-7 px-2 text-[11px]' : undefined} variant="ghost" disabled={!!busy} onClick={() => void actions.startConversation()}><MessageSquare size={15} className="mr-2" />询问教务助理</Button></div>
