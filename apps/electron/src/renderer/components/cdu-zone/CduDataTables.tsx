@@ -1,7 +1,8 @@
 import type { CduDataset } from '@profer/shared'
 
 /** React 文本节点显示单元格，学校网页与导入 HTML 不直接注入应用 DOM。 */
-export function CduDataSource({ data }: { data: CduDataset }): React.ReactElement {
+export function CduDataSource({ data, compact = false }: { data: CduDataset; compact?: boolean }): React.ReactElement {
+  if (compact) return <details className="text-[10px] leading-4 text-muted-foreground"><summary className="cursor-pointer select-none">{data.source === 'file' ? '文件导入' : '教务同步'}{data.cached ? ' · 本地缓存' : ''} · {data.semester} · 学号 {data.accountId} · {new Date(data.fetchedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })} · 来源详情</summary><div className="mt-2 rounded-lg bg-muted/30 p-3"><CduDataSource data={data} /></div></details>
   return <div className="space-y-3"><div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
       <span className="rounded-full bg-muted px-3 py-1">{data.source === 'file' ? '文件导入' : '教务同步'}{data.cached ? ' · 本地缓存' : ''}</span>
       <span>{data.semester}</span><span>学号 {data.accountId}</span>

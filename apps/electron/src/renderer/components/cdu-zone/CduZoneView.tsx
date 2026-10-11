@@ -39,6 +39,7 @@ export function CduZoneView(): React.ReactElement {
   const actions = useCduZoneActions()
   const data = datasets[domain]
   const hasLocalData = Object.keys(datasets).length > 0
+  const compactSchedule = hasLocalData && domain === 'schedule' && !preview
   const section = sections.find(item => item.domain === domain)!
 
   useEffect(() => {
@@ -51,14 +52,14 @@ export function CduZoneView(): React.ReactElement {
 
   return <div className="relative flex h-full min-h-0 flex-col bg-muted/25">
     <WindowControlsHost id="cdu-zone" priority={20} className="absolute right-2 top-[3px] z-20" />
-    <header className="titlebar-drag-region flex h-14 shrink-0 items-center gap-3 px-7 pr-36">
+    <header className={cn('titlebar-drag-region flex shrink-0 items-center gap-3 pr-36', compactSchedule ? 'h-10 px-4' : 'h-14 px-7')}>
       <GraduationCap size={18} className="text-primary" /><span className="text-sm font-medium">CDU 专区</span>
       <span className={cn('rounded-full px-2.5 py-1 text-[11px]', account.legacyVpnHttpAllowed ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300' : 'bg-primary/10 text-primary')}>{account.legacyVpnHttpAllowed ? '本次已允许学校旧版 HTTP 转发' : '校园网络直连'}</span>
     </header>
-    <main className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 lg:px-9">
-      <div className="mx-auto max-w-7xl space-y-5">
-        {hasLocalData && <section className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-sm">
-          <div className="flex items-center gap-3"><div className="rounded-xl bg-primary p-2"><img src={cduLogo} alt="成都大学" className="h-6 w-28 object-contain" /></div><div><h1 className="text-base font-semibold">我的校园日程</h1><p className="mt-1 text-xs text-muted-foreground">{account.studentName || '成都大学'} · 本机数据可用</p></div></div>
+    <main className={cn('min-h-0 flex-1 overflow-y-auto', compactSchedule ? 'px-3 pb-3' : 'px-6 pb-10 lg:px-9')}>
+      <div className={cn('mx-auto max-w-7xl', compactSchedule ? 'space-y-2' : 'space-y-5')}>
+        {hasLocalData && <section className={cn('flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card shadow-sm', compactSchedule ? 'mt-2 p-2' : 'mt-3 p-4')}>
+          <div className="flex items-center gap-3"><div className="rounded-xl bg-primary p-2"><img src={cduLogo} alt="成都大学" className="h-6 w-28 object-contain" /></div><div><h1 className="text-sm font-semibold">我的校园日程</h1><p className="mt-0.5 text-[10px] text-muted-foreground">{account.studentName || '成都大学'} · 本机数据可用</p></div></div>
           <div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">{statusLabels[account.status]}</span><Button variant="outline" size="sm" onClick={() => setAccountPanelOpen(!accountPanelOpen)}>{accountPanelOpen ? '收起账户' : '学校账户'}</Button></div>
         </section>}
         {(!hasLocalData || accountPanelOpen) && <section className="grid gap-4 pt-3 lg:grid-cols-[1fr_1.2fr]">
@@ -86,18 +87,18 @@ export function CduZoneView(): React.ReactElement {
           </div>
         </section>}
 
-        <nav aria-label="CDU 教务类别" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-          {sections.map(({ domain: value, title, description, icon: Icon }) => <button key={value} disabled={!!busy} onClick={() => { setDomain(value); setPreview(null); setNotice('') }} className={cn('rounded-2xl p-4 text-left shadow-sm transition-colors disabled:opacity-60', domain === value ? 'bg-primary/10 ring-1 ring-primary/20' : 'bg-card hover:bg-muted')}>
-            <Icon size={20} className="mb-3 text-primary" /><span className="block text-sm font-semibold">{title}</span><span className="mt-1 block text-xs text-muted-foreground">{description}</span>
+        <nav aria-label="CDU 教务类别" className={cn('grid', compactSchedule ? 'grid-cols-4 gap-2' : 'grid-cols-2 gap-3 lg:grid-cols-4')}>
+          {sections.map(({ domain: value, title, description, icon: Icon }) => <button key={value} disabled={!!busy} onClick={() => { setDomain(value); setPreview(null); setNotice('') }} className={cn('rounded-2xl text-left shadow-sm transition-colors disabled:opacity-60', compactSchedule ? 'flex items-center gap-2 px-3 py-2' : 'p-4', domain === value ? 'bg-primary/10 ring-1 ring-primary/20' : 'bg-card hover:bg-muted')}>
+            <Icon size={compactSchedule ? 15 : 20} className={cn('shrink-0 text-primary', !compactSchedule && 'mb-3')} /><span className={cn('block font-semibold', compactSchedule ? 'text-xs' : 'text-sm')}>{title}</span>{!compactSchedule && <span className="mt-1 block text-xs text-muted-foreground">{description}</span>}
           </button>)}
         </nav>
 
-        <section className="rounded-3xl bg-card p-6 shadow-sm">
+        <section className={cn('rounded-3xl bg-card shadow-sm', compactSchedule ? 'p-3' : 'p-6')}>
           <div className="flex flex-wrap items-center justify-between gap-4">
-            <div><h2 className="text-lg font-semibold">{section.title}</h2><p className="mt-1 text-xs text-muted-foreground">同步与文件导入共用本地视图，重启后自动恢复已保存内容。</p></div>
-            <div className="flex flex-wrap gap-2"><Button disabled={!!busy || account.status !== 'active'} onClick={() => void actions.syncSchoolData()}><RefreshCw size={14} className="mr-2" />同步教务到应用</Button><Button variant="outline" disabled={!!busy} onClick={() => setImportOpen(!importOpen)}><FileUp size={14} className="mr-2" />导入文件</Button><Button variant="ghost" disabled={!!busy} onClick={() => void actions.startConversation()}><MessageSquare size={15} className="mr-2" />询问教务助理</Button></div>
+            <div><h2 className={cn('font-semibold', compactSchedule ? 'text-sm' : 'text-lg')}>{section.title}</h2>{!compactSchedule && <p className="mt-1 text-xs text-muted-foreground">同步与文件导入共用本地视图，重启后自动恢复已保存内容。</p>}</div>
+            <div className="flex flex-wrap gap-2">{compactSchedule && account.status === 'active' && <Button size="sm" className="h-7 px-2 text-[11px]" variant="ghost" disabled={!!busy} onClick={() => void actions.query(false)}>刷新当前</Button>}<Button size={compactSchedule ? 'sm' : 'default'} className={compactSchedule ? 'h-7 px-2 text-[11px]' : undefined} disabled={!!busy || account.status !== 'active'} onClick={() => void actions.syncSchoolData()}><RefreshCw size={14} className="mr-2" />{compactSchedule ? '同步教务' : '同步教务到应用'}</Button><Button size={compactSchedule ? 'sm' : 'default'} className={compactSchedule ? 'h-7 px-2 text-[11px]' : undefined} variant="outline" disabled={!!busy} onClick={() => setImportOpen(!importOpen)}><FileUp size={14} className="mr-2" />导入文件</Button><Button size={compactSchedule ? 'sm' : 'default'} className={compactSchedule ? 'h-7 px-2 text-[11px]' : undefined} variant="ghost" disabled={!!busy} onClick={() => void actions.startConversation()}><MessageSquare size={15} className="mr-2" />询问教务助理</Button></div>
           </div>
-          <div className="mt-3 flex items-center gap-3 text-xs"><Button variant="ghost" size="sm" disabled={!!busy || account.status !== 'active'} onClick={() => void actions.query(false)}>更新当前数据</Button><span className="text-muted-foreground">{account.status === 'active' ? '学校窗口仅在认证或需要确认筛选时使用' : '本机数据可直接查看，连接学校后可更新'}</span></div>
+          {!compactSchedule && <div className="mt-3 flex items-center gap-3 text-xs"><Button variant="ghost" size="sm" disabled={!!busy || account.status !== 'active'} onClick={() => void actions.query(false)}>更新当前数据</Button><span className="text-muted-foreground">{account.status === 'active' ? '学校窗口仅在认证或需要确认筛选时使用' : '本机数据可直接查看，连接学校后可更新'}</span></div>}
           {importOpen && <div className="mt-4 space-y-3 rounded-2xl bg-muted/40 p-4"><p className="text-xs font-medium">导入本人文件或读取指定学期的本地数据</p><div className="flex flex-wrap items-end gap-3">
             <label className="min-w-36 flex-1 text-xs text-muted-foreground">数据归属学号<Input value={form.accountId} disabled={!!busy || account.status === 'active'} onChange={event => { setForm({ ...form, accountId: event.target.value }); setPreview(null) }} placeholder="导入时填写本人学号" className="mt-2 bg-background" /></label>
             <label className="min-w-36 flex-1 text-xs text-muted-foreground">本地数据学期<Input value={form.semester} disabled={!!busy} onChange={event => { setForm({ ...form, semester: event.target.value }); setPreview(null) }} placeholder="例如 2026-2027-1" className="mt-2 bg-background" /></label>
@@ -115,7 +116,7 @@ export function CduZoneView(): React.ReactElement {
             <h3 className="font-semibold">确认导入内容</h3><p className="text-xs leading-6 text-muted-foreground">{preview.warnings.join(' ')}</p>
             <CduDataTables data={preview.data} />
             <div className="flex gap-2"><Button disabled={!!busy} onClick={() => void actions.confirmImport()}>确认并保存</Button><Button variant="ghost" disabled={!!busy} onClick={() => setPreview(null)}>取消</Button></div>
-          </div> : data ? <div className="mt-6"><CduDatasetView data={data} /></div> : <div className="py-14 text-center"><section.icon size={32} className="mx-auto mb-4 text-muted-foreground/50" /><p className="text-sm font-medium">还没有{section.title}数据</p><p className="mx-auto mt-2 max-w-md text-xs leading-6 text-muted-foreground">连接学校后自动同步，或导入本人导出的文件。保存后会在这里显示，并支持离线查看。</p></div>}
+          </div> : data ? <div className={compactSchedule ? 'mt-2' : 'mt-6'}><CduDatasetView data={data} /></div> : <div className="py-14 text-center"><section.icon size={32} className="mx-auto mb-4 text-muted-foreground/50" /><p className="text-sm font-medium">还没有{section.title}数据</p><p className="mx-auto mt-2 max-w-md text-xs leading-6 text-muted-foreground">连接学校后自动同步，或导入本人导出的文件。保存后会在这里显示，并支持离线查看。</p></div>}
         </section>
 
         <details className="rounded-2xl bg-card p-5 shadow-sm"><summary className="cursor-pointer text-xs text-muted-foreground">校园网络与本地数据管理</summary>
