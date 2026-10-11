@@ -333,6 +333,7 @@ CDUT 内网青果教务系统部署有瑞数（RuiShu）动态安全反爬 WAF�
 
 ## 8. 版本管理与发版
 
+- **Git 提交信息**：采用 `type(scope): 中文说明` 格式，`scope` 可省略。类型前缀保留英文，如 `feat`、`fix`、`docs`、`refactor`、`test`、`chore`、`perf`、`build`、`ci`、`revert`；标题说明与提交正文以中文为主，允许保留必要的英文术语、代码标识符和包名。例如：`feat: 新增 CDU 课表查询`、`fix(cdu): 修复账户隔离问题`、`docs: 更新接入说明`。
 - **版本递增**：提交代码时始终递增受影响包的 patch 版本（影响多包则逐个递增）。
 - **构建目标**：`__PROFER_BUILD_TARGET__` 编译期注入 `oss` / `commercial`，互不串扰。
 - **Pi 内核升级**：根 `overrides` 将四个 Pi 包统钉 `0.86.1`，`patchedDependencies` 施加补丁；升级必须四者同步并评估补丁 rebase 与 native addon 兼容性。

@@ -569,6 +569,8 @@ React UI 更新
 
 ## 11. 版本管理与发版
 
+- **Git 提交信息**：采用 `type(scope): 中文说明` 格式，`scope` 可省略。类型前缀保留英文，如 `feat`、`fix`、`docs`、`refactor`、`test`、`chore`、`perf`、`build`、`ci`、`revert`；标题说明与提交正文以中文为主，允许保留必要的英文术语、代码标识符和包名。例如：`feat: 新增 CDU 课表查询`、`fix(cdu): 修复账户隔离问题`、`docs: 更新接入说明`。
+
 提交代码时始终递增受影响包的 patch 版本（如 `0.1.18` → `0.1.19`），影响多个包则都要递增。
 
 ### 默认 Skills 版本契约（`apps/electron/default-skills/`）
