@@ -7,7 +7,7 @@ import { ConfirmDialog } from '@profer/ui/primitives/confirm-dialog'
 import { WindowControlsHost } from '@/components/WindowControlsTemplate'
 import { cn } from '@/lib/utils'
 import { useCduZoneActions } from '@/hooks/useCduZoneActions'
-import { cduAccountAtom, cduAutoSyncedAccountAtom, cduBusyAtom, cduDatasetsAtom, cduDiagnosticsAtom, cduDomainAtom, cduFormAtom, cduImportPreviewAtom, cduImportOptionsOpenAtom, cduLogoutOpenAtom, cduLegacyVpnConfirmAtom, cduNoticeAtom } from '@/atoms/cdu-atoms'
+import { cduAccountAtom, cduAccountPanelOpenAtom, cduAutoSyncedAccountAtom, cduBusyAtom, cduDatasetsAtom, cduDiagnosticsAtom, cduDomainAtom, cduFormAtom, cduImportPreviewAtom, cduImportOptionsOpenAtom, cduLogoutOpenAtom, cduLegacyVpnConfirmAtom, cduNoticeAtom } from '@/atoms/cdu-atoms'
 import cduLogo from '@/assets/cdu-logo.svg'
 import { CduDataTables } from './CduDataTables'
 import { CduLoginForm } from './CduLoginForm'
@@ -33,6 +33,7 @@ export function CduZoneView(): React.ReactElement {
   const [logoutOpen, setLogoutOpen] = useAtom(cduLogoutOpenAtom)
   const [legacyVpnConfirm, setLegacyVpnConfirm] = useAtom(cduLegacyVpnConfirmAtom)
   const [importOpen, setImportOpen] = useAtom(cduImportOptionsOpenAtom)
+  const [accountPanelOpen, setAccountPanelOpen] = useAtom(cduAccountPanelOpenAtom)
   const [syncedAccount, setSyncedAccount] = useAtom(cduAutoSyncedAccountAtom)
   const fileInput = useRef<HTMLInputElement>(null)
   const actions = useCduZoneActions()
@@ -56,7 +57,11 @@ export function CduZoneView(): React.ReactElement {
     </header>
     <main className="min-h-0 flex-1 overflow-y-auto px-6 pb-10 lg:px-9">
       <div className="mx-auto max-w-7xl space-y-5">
-        <section className="grid gap-4 pt-3 lg:grid-cols-[1fr_1.2fr]">
+        {hasLocalData && <section className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-card p-4 shadow-sm">
+          <div className="flex items-center gap-3"><div className="rounded-xl bg-primary p-2"><img src={cduLogo} alt="成都大学" className="h-6 w-28 object-contain" /></div><div><h1 className="text-base font-semibold">我的校园日程</h1><p className="mt-1 text-xs text-muted-foreground">{account.studentName || '成都大学'} · 本机数据可用</p></div></div>
+          <div className="flex items-center gap-3"><span className="text-xs text-muted-foreground">{statusLabels[account.status]}</span><Button variant="outline" size="sm" onClick={() => setAccountPanelOpen(!accountPanelOpen)}>{accountPanelOpen ? '收起账户' : '学校账户'}</Button></div>
+        </section>}
+        {(!hasLocalData || accountPanelOpen) && <section className="grid gap-4 pt-3 lg:grid-cols-[1fr_1.2fr]">
           <div className="relative overflow-hidden rounded-3xl bg-primary p-5 text-primary-foreground shadow-sm">
             <img src={cduLogo} alt="成都大学" className="mb-5 h-9 max-w-[250px] object-contain object-left" />
             <p className="mb-2 text-xs font-medium tracking-[0.15em] opacity-70">学习与校园生活</p>
@@ -79,7 +84,7 @@ export function CduZoneView(): React.ReactElement {
               {!account.studentId && ['connecting', 'requires_verification'].includes(account.status) && <Button variant="ghost" disabled={!!busy} onClick={() => void actions.logout()}>取消连接</Button>}
             </div></details>
           </div>
-        </section>
+        </section>}
 
         <nav aria-label="CDU 教务类别" className="grid grid-cols-2 gap-3 lg:grid-cols-4">
           {sections.map(({ domain: value, title, description, icon: Icon }) => <button key={value} disabled={!!busy} onClick={() => { setDomain(value); setPreview(null); setNotice('') }} className={cn('rounded-2xl p-4 text-left shadow-sm transition-colors disabled:opacity-60', domain === value ? 'bg-primary/10 ring-1 ring-primary/20' : 'bg-card hover:bg-muted')}>
