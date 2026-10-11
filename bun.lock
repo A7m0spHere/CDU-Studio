@@ -39,7 +39,7 @@
     },
     "apps/electron": {
       "name": "@profer/electron",
-      "version": "0.15.141",
+      "version": "0.15.142",
       "dependencies": {
         "@anthropic-ai/sdk": "^0.93.0",
         "@earendil-works/pi-agent-core": "0.86.1",
@@ -166,9 +166,16 @@
         "typescript": "^5.0.0",
       },
     },
+    "packages/benchmark-multihop": {
+      "name": "@profer/benchmark-multihop",
+      "version": "0.1.0",
+      "bin": {
+        "benchmark-multihop": "./src/server.ts",
+      },
+    },
     "packages/core": {
       "name": "@profer/core",
-      "version": "0.2.12",
+      "version": "0.2.13",
       "dependencies": {
         "@profer/shared": "workspace:*",
         "highlight.js": "^11.11.1",
@@ -204,7 +211,7 @@
     },
     "packages/shared": {
       "name": "@profer/shared",
-      "version": "0.1.64",
+      "version": "0.1.65",
       "devDependencies": {
         "typescript": "^5.0.0",
       },
@@ -557,6 +564,8 @@
     "@pkgjs/parseargs": ["@pkgjs/parseargs@0.11.0", "https://registry.npmmirror.com/@pkgjs/parseargs/-/parseargs-0.11.0.tgz", {}, "sha512-+1VkjdD0QBLPodGrJUeqarH8VAIvQODIbwh9XpP5Syisf7YoQgsJKPNFoqqLQlu+VQ/tVSshMR6loPMn8U+dPg=="],
 
     "@profer/agent-fabric": ["@profer/agent-fabric@workspace:packages/agent-fabric"],
+
+    "@profer/benchmark-multihop": ["@profer/benchmark-multihop@workspace:packages/benchmark-multihop"],
 
     "@profer/cli": ["@profer/cli@workspace:apps/cli"],
 
