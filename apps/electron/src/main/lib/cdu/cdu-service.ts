@@ -1,8 +1,10 @@
 import { BrowserWindow, type BrowserWindowConstructorOptions, type WebFrameMain, type Session } from 'electron'
-import type { CduAccountProfile, CduDataset, CduDomain, CduQueryInput, CduQueryResult } from '@profer/shared'
+import type { CduAccountProfile, CduDataset, CduDomain, CduLoginInput, CduQueryInput, CduQueryResult } from '@profer/shared'
 import { CduNetwork, CDU_HOME_URL, CDU_VPN_URL, isCduUrl, isCduBusinessUrl, isLegacyCduVpnUrl } from './cdu-network'
 import { CduStore, validateCduDomain, validateCduSemester } from './cdu-store'
 import { classifyCduPage, extractCduIdentity, inferCduSemester, readCduPageTables, selectCduTables } from './cdu-page-parser'
+import { buildCduCredentialScript, getCduCredentialStage, validateCduLoginInput, type CduCredentialResult } from './cdu-credential-login'
+import { buildCduMenuScript } from './cdu-page-navigation'
 
 const MENU_LABELS: Record<CduDomain, string[]> = {
   profile: ['个人信息', '学籍信息', '学生基本信息', '个人资料', '首页'],
@@ -26,10 +28,18 @@ export class CduService {
   private advancing = false
   private loginActions = new Set<string>()
   private loginMode: 'direct' | 'vpn' = 'direct'
+  private businessVerified = false
   private legacyVpnHttpApproved = false
   private generation = 0
   private verifying = false
   private queryPending = false
+  private credentials: CduLoginInput | undefined
+  private requestedStudentId: string | undefined
+  private credentialSubmissions = new Set<string>()
+  private credentialTimer: ReturnType<typeof setTimeout> | undefined
+  private awaitingUserVerification = false
+  private credentialFailure = false
+  private loginStarting = false
   private statusCallback: (profile: CduAccountProfile) => void = () => {}
   getAccount(): CduAccountProfile { return { ...(this.profile ??= this.store.loadAccount()), legacyVpnHttpAllowed: this.legacyVpnHttpApproved } }
   onStatus(callback: (profile: CduAccountProfile) => void): void { this.statusCallback = callback }
@@ -40,27 +50,103 @@ export class CduService {
     this.statusCallback(this.getAccount())
     return this.getAccount()
   }
+  /** 凭据只存在本次连接的主进程内存中，各认证阶段复用同一份输入。 */
+  async login(input: CduLoginInput): Promise<void> {
+    validateCduLoginInput(input)
+    if (this.loginStarting || this.credentials) throw new Error('正在连接学校，请等待完成或先取消连接')
+    this.loginStarting = true
+    this.clearCredentials()
+    for (const win of [...this.windows]) if (!win.isDestroyed()) win.destroy()
+    const generation = ++this.generation
+    try {
+      const ses = await this.network.prepare()
+      if (generation !== this.generation) return
+      await ses.clearStorageData()
+      if (generation !== this.generation) return
+      await ses.closeAllConnections()
+      if (generation !== this.generation) return
+      this.store.clearAccount()
+      this.requestedStudentId = input.username.trim()
+      this.credentials = { username: this.requestedStudentId, password: input.password }
+      this.credentialFailure = false
+      this.update({ studentId: '', studentName: '', college: undefined, major: undefined, lastVerifiedAt: undefined, status: 'connecting', message: '正在连接学校教务；需要扫码、短信或验证码时会打开学校页面' })
+      this.armCredentialExpiry(120_000)
+      await this.navigateLogin('direct', false)
+      await this.advanceLogin()
+    } catch {
+      if (generation !== this.generation && !this.requestedStudentId) return
+      this.clearCredentials()
+      this.update({ status: 'error', message: '无法初始化学校认证，请检查网络后重新连接' })
+      throw new Error('无法初始化学校认证，请检查网络后重新连接')
+    } finally { this.loginStarting = false }
+  }
+  private clearCredentials(): void {
+    this.credentials = undefined
+    this.requestedStudentId = undefined
+    this.credentialSubmissions.clear()
+    this.credentialFailure = false
+    this.awaitingUserVerification = false
+    if (this.credentialTimer) clearTimeout(this.credentialTimer)
+    this.credentialTimer = undefined
+  }
+  private armCredentialExpiry(delay: number): void {
+    if (this.credentialTimer) clearTimeout(this.credentialTimer)
+    this.credentialTimer = setTimeout(() => {
+      this.credentials = undefined
+      this.credentialTimer = undefined
+      if (this.getAccount().status === 'requires_verification') {
+        this.update({ message: '本次密码已从内存释放，可继续在学校页面完成验证；后续若需密码请重新连接' })
+      } else {
+        this.credentialFailure = true
+        this.update({ status: 'error', message: '自动连接超时，请检查学校页面后重新连接' })
+      }
+      this.revealSchoolWindow()
+    }, delay)
+    this.credentialTimer.unref()
+  }
+  private allowTimeForUserVerification(): void {
+    if (!this.credentials || this.awaitingUserVerification) return
+    this.awaitingUserVerification = true
+    // 人工扫码或阅读学校条款需要更多时间；只延长一次，不能被轮询无限续期。
+    this.armCredentialExpiry(10 * 60_000)
+  }
+  private revealSchoolWindow(): void {
+    const win = [...this.windows].reverse().find(item => !item.isDestroyed())
+    win?.show(); win?.focus()
+  }
   async openLogin(mode: 'direct' | 'vpn'): Promise<void> {
+    if (this.loginStarting) throw new Error('正在初始化学校认证，请稍候')
+    // 二次验证或兼容方式继续当前流程，避免再次索要账号密码。
+    if (this.requestedStudentId && this.windows.size) { this.revealSchoolWindow(); return }
+    this.clearCredentials()
+    return this.navigateLogin(mode, true)
+  }
+  private async navigateLogin(mode: 'direct' | 'vpn', interactive: boolean): Promise<void> {
     if (mode !== 'direct' && mode !== 'vpn') throw new Error('未知登录方式')
+    const requestGeneration = this.generation
     const ses = await this.network.prepare()
+    if (requestGeneration !== this.generation) return
     const connected = [...this.windows].reverse().find(win => !win.isDestroyed() && isCduBusinessUrl(win.webContents.mainFrame.url))
     const existing = connected ?? (mode === this.loginMode ? this.window : undefined)
     if (existing && !existing.isDestroyed() && ['active', 'connecting', 'requires_verification'].includes(this.getAccount().status)) {
-      existing.show(); existing.focus()
+      if (interactive) { existing.show(); existing.focus() }
       return
     }
     this.loginMode = mode
+    this.businessVerified = false
     this.generation++
+    const navigationGeneration = this.generation
     if (!this.window || this.window.isDestroyed()) {
-      const win = this.createWindow({ width: 1120, height: 800, title: 'CDU 学校登录与教务', autoHideMenuBar: true, webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, safeDialogs: true } })
+      const win = this.createWindow({ show: interactive, width: 1120, height: 800, title: 'CDU 学校登录与教务', autoHideMenuBar: true, webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, safeDialogs: true } })
       this.window = win
       this.trackWindow(win, ses)
     }
     this.loginActions.clear()
+    this.credentialSubmissions.clear()
     this.update({ status: 'connecting', connectionHint: undefined, message: mode === 'vpn' ? '请完成学校 VPN 登录，软件将自动进入数智教务并继续统一认证' : '请完成学校账号登录，软件将自动检测认证结果；必要时完成扫码或短信验证' })
-    this.window.show(); this.window.focus()
+    if (interactive) { this.window.show(); this.window.focus() }
     try { await this.window.loadURL(mode === 'vpn' ? CDU_VPN_URL : CDU_HOME_URL) }
-    catch { this.update({ status: 'error', message: '校园页面不可达，请检查网络或尝试官方 VPN' }) }
+    catch { if (navigationGeneration === this.generation) this.update({ status: 'error', message: '校园页面不可达，请检查网络或尝试官方 VPN' }) }
   }
   private isAllowedUrl(url: string): boolean {
     return isCduUrl(url) || (this.legacyVpnHttpApproved && isLegacyCduVpnUrl(url))
@@ -78,14 +164,16 @@ export class CduService {
     // 保留真实弹窗握手，兼容先开 about:blank 再写入 VPN 转发地址的学校脚本。
     win.webContents.setWindowOpenHandler(({ url }) => {
       if (isLegacyCduVpnUrl(url) && !this.legacyVpnHttpApproved) {
+        this.allowTimeForUserVerification()
         this.update({ status: 'error', connectionHint: 'legacy_vpn_http', message: '学校 VPN 资源使用旧版 HTTP 转发，需要先选择兼容方式；也可使用校园网或官方 SSL VPN 客户端' })
+        this.revealSchoolWindow()
         return { action: 'deny' }
       }
       if (url !== 'about:blank' && !this.isAllowedUrl(url)) {
         this.update({ status: 'error', message: '学校弹窗地址未通过校园 HTTPS 校验，已停止跳转' })
         return { action: 'deny' }
       }
-      return { action: 'allow', outlivesOpener: true, overrideBrowserWindowOptions: { width: 1120, height: 800, autoHideMenuBar: true, webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, safeDialogs: true } } }
+      return { action: 'allow', outlivesOpener: true, overrideBrowserWindowOptions: { show: !this.requestedStudentId, width: 1120, height: 800, autoHideMenuBar: true, webPreferences: { session: ses, nodeIntegration: false, contextIsolation: true, sandbox: true, webSecurity: true, safeDialogs: true } } }
     })
     win.webContents.on('did-create-window', child => this.trackWindow(child, ses))
     const guardNavigation = (event: { preventDefault(): void }, url: string): void => {
@@ -103,6 +191,7 @@ export class CduService {
       this.windows.delete(win); this.generation++
       if (this.window === win) this.window = [...this.windows].find(item => !item.isDestroyed())
       if (!this.windows.size) {
+        this.clearCredentials()
         if (this.loginTimer) clearInterval(this.loginTimer)
         this.loginTimer = undefined
         if (this.getAccount().status === 'active') this.update({ status: 'expired', message: '学校窗口已关闭，重新打开后自动验证登录态' })
@@ -118,15 +207,41 @@ export class CduService {
   private frames(): WebFrameMain[] {
     return [...this.windows].filter(win => !win.isDestroyed()).flatMap(win => win.webContents.mainFrame.framesInSubtree).slice(0, 40)
   }
-  /** 仅点击学校已展示的只读入口，不读取或代填密码，不提交验证码。 */
+  /** 认证阶段复用本次输入，只点击学校已展示的只读入口，不提交验证码。 */
   async advanceLogin(): Promise<void> {
-    if (this.advancing || this.queryPending) return
+    if (this.advancing || this.queryPending || this.credentialFailure) return
     this.advancing = true
     const generation = this.generation
     try {
       for (const frame of this.frames()) {
         if (!this.isAllowedUrl(frame.url)) continue
         const url = new URL(frame.url)
+        const stage = this.credentials && getCduCredentialStage(frame.url, this.legacyVpnHttpApproved)
+        if (stage && this.credentials) {
+          const key = `${stage}:${url.origin}`
+          const allowSubmit = !this.credentialSubmissions.has(key)
+          const result = await this.executeFrameScript<CduCredentialResult>(frame, buildCduCredentialScript(allowSubmit ? this.credentials : { username: '', password: '' }, url.origin, stage, allowSubmit), true)
+          if (generation !== this.generation) return
+          if (!result) {
+            this.allowTimeForUserVerification()
+            // 提交结果不确定时停止再次注入，交给学校页面显示真实结果，避免重复认证。
+            this.credentialSubmissions.add(key)
+            this.update({ status: 'requires_verification', message: '自动提交结果暂未确认，请检查学校窗口；软件会继续检测认证结果' })
+            this.revealSchoolWindow(); return
+          }
+          if (result?.state === 'submitted') this.credentialSubmissions.add(key)
+          if (result?.state === 'rejected') {
+            this.clearCredentials(); this.credentialFailure = true
+            this.update({ status: 'error', message: '学校提示账号或密码错误、锁定或过期，请检查后重新连接' })
+            this.revealSchoolWindow(); return
+          }
+          if (result?.state === 'verification_required' || result?.state === 'consent_required') {
+            this.allowTimeForUserVerification()
+            this.update({ status: 'requires_verification', message: result.state === 'consent_required' ? '请在学校窗口阅读并确认 VPN 使用说明，账号密码已填入' : '请在学校窗口完成扫码、短信或验证码，软件会继续检测结果' })
+            this.revealSchoolWindow(); return
+          }
+          if (result?.state === 'not_ready' && this.getAccount().status === 'requires_verification') this.revealSchoolWindow()
+        }
         const portal = url.hostname === 'vpn.cdu.edu.cn' && url.pathname.startsWith('/portal/') && url.hash.includes('/service')
         const business = isCduBusinessUrl(frame.url)
         if (portal && [...this.windows].some(win => !win.isDestroyed() && isCduBusinessUrl(win.webContents.mainFrame.url))) continue
@@ -135,19 +250,19 @@ export class CduService {
         const key = `${action}:${url.origin}${url.pathname}${url.hash}`
         if (this.loginActions.has(key)) continue
         const labels = portal ? ['数智教务'] : ['统一认证', '统一身份认证', '统一身份认证登录']
-        const clicked = await frame.executeJavaScript(`(() => {
+        const clicked = await this.executeFrameScript<boolean>(frame, `(() => {
           const labels = ${JSON.stringify(labels)};
           const target = [...document.querySelectorAll('a,button,[role=button]')].find(el =>
             el.getClientRects().length && labels.some(label => ${portal ? "(el.getAttribute('title') === label || (el.textContent || '').includes(label))" : "(el.textContent || '').trim() === label"}));
           if (!target) return false;
           target.click(); return true;
-        })()`, true).catch(() => false)
+        })()`, true)
         if (generation !== this.generation) return
         if (clicked) { this.loginActions.add(key); break }
       }
       await this.verifyAccount()
-      if (generation === this.generation && this.loginMode === 'direct' && this.getAccount().status === 'error' && !this.getAccount().connectionHint) {
-        await this.openLogin('vpn')
+      if (generation === this.generation && !this.businessVerified && !this.credentialFailure && this.loginMode === 'direct' && this.getAccount().status === 'error' && !this.getAccount().connectionHint) {
+        await this.navigateLogin('vpn', !this.requestedStudentId)
         return
       }
       if (generation === this.generation && this.getAccount().status === 'connecting') {
@@ -162,21 +277,43 @@ export class CduService {
       if (generation === this.generation) this.update({ status: 'error', message: '学校自动连接暂未完成，请在学校窗口检查认证状态' })
     } finally { this.advancing = false }
   }
+  /** 页面导航或脚本异常不得让自动登录永久等待。 */
+  private async executeFrameScript<T>(frame: WebFrameMain, source: string, userGesture = false): Promise<T | undefined> {
+    let timer: ReturnType<typeof setTimeout> | undefined
+    try {
+      return await Promise.race([
+        frame.executeJavaScript(source, userGesture) as Promise<T>,
+        new Promise<undefined>(resolve => { timer = setTimeout(() => resolve(undefined), 4000); timer.unref() }),
+      ])
+    } catch { return undefined }
+    finally { if (timer) clearTimeout(timer) }
+  }
   private async snapshots(): Promise<PageSnapshot[]> {
     const results: PageSnapshot[] = []
     for (const frame of this.frames()) {
       if (!this.isAllowedUrl(frame.url)) continue
       try {
         // 不读取凭据、可编辑输入或 Cookie；仅保留展示数据及可见学期筛选标签。
-        const html = await frame.executeJavaScript(`(() => {
+        const html = await this.executeFrameScript<string>(frame, `(() => {
           if (window.frameElement && !window.frameElement.getClientRects().length) return '';
           const copy = document.body.cloneNode(true);
+          const tables = [...document.body.querySelectorAll('table,.datagrid-view,.ui-jqgrid-view')];
+          [...copy.querySelectorAll('table,.datagrid-view,.ui-jqgrid-view')].forEach((el, index) => {
+            const original = tables[index];
+            let hidden = !original?.getClientRects().length;
+            for (let parent = original; parent && !hidden; parent = parent.parentElement) {
+              const style = getComputedStyle(parent);
+              hidden = style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0';
+            }
+            if (hidden) el.remove();
+          });
           const terms = [...new Set([...document.querySelectorAll('select')].filter(el => el.getClientRects().length).map(el => (el.selectedOptions[0]?.textContent || '').trim()).filter(text => /^\\d{4}-\\d{4}-[1-3]$/.test(text)))];
           if ([...document.querySelectorAll('input[type=password]')].some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')) copy.setAttribute('data-cdu-login-required', 'true');
-          if ([...document.querySelectorAll('.datagrid-mask,.datagrid-mask-msg')].some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')) copy.setAttribute('data-cdu-loading', 'true');
+          if (/企业微信[\\s\\S]{0,16}(?:扫码|二维码)|扫码验证|短信验证码|二次认证/.test(document.body.innerText || '')) copy.setAttribute('data-cdu-verification-required', 'true');
+          if ([...document.querySelectorAll('.datagrid-mask,.datagrid-mask-msg,.ui-jqgrid .loading')].some(el => el.getClientRects().length && getComputedStyle(el).visibility !== 'hidden')) copy.setAttribute('data-cdu-loading', 'true');
           copy.querySelectorAll('script,style,input,textarea,select,iframe').forEach(el => el.remove());
           copy.querySelectorAll('td,th,label,p,div,span').forEach(el => el.append(' '));
-          return (terms.length === 1 ? '<p data-cdu-semester="' + terms[0] + '">页面学期</p>' : '') + (copy.hasAttribute('data-cdu-login-required') ? '<p data-cdu-login-required>学校登录</p>' : '') + (copy.hasAttribute('data-cdu-loading') ? '<p data-cdu-loading>业务数据加载中</p>' : '') + copy.innerHTML.slice(0, 1000000);
+          return (terms.length === 1 ? '<p data-cdu-semester="' + terms[0] + '">页面学期</p>' : '') + (copy.hasAttribute('data-cdu-verification-required') ? '<p data-cdu-verification-required>学校二次验证</p>' : '') + (copy.hasAttribute('data-cdu-login-required') ? '<p data-cdu-login-required>学校登录</p>' : '') + (copy.hasAttribute('data-cdu-loading') ? '<p data-cdu-loading>业务数据加载中</p>' : '') + copy.innerHTML.slice(0, 1000000);
         })()`)
         if (html) results.push({ url: frame.url, html: String(html) })
       } catch { /* 导航中分离的 iframe 不影响其余页面读取 */ }
@@ -192,7 +329,11 @@ export class CduService {
       const pages = await this.snapshots()
       if (generation !== this.generation) return this.getAccount()
       const authentication = pages.map(page => classifyCduPage(page.url, page.html))
-      if (authentication.includes('verification_required')) return this.update({ status: 'requires_verification', message: '请在学校窗口完成扫码或短信验证' })
+      if (authentication.includes('verification_required')) {
+        this.allowTimeForUserVerification()
+        this.revealSchoolWindow()
+        return this.update({ status: 'requires_verification', message: '请在学校窗口完成扫码或短信验证' })
+      }
       if (authentication.includes('login_required')) return this.update({ status: this.getAccount().status === 'active' ? 'expired' : 'connecting', message: '请在学校窗口完成统一认证' })
       const businessPages = pages.filter(page => isCduBusinessUrl(page.url))
       const readyPages = businessPages.filter(page => classifyCduPage(page.url, page.html) === 'business')
@@ -202,6 +343,11 @@ export class CduService {
       if (identity && identities.some(item => item.studentId !== identity.studentId)) return this.update({ status: 'error', message: '学校窗口存在不同账户，请关闭旧账户页面后重新连接' })
       // 顶栏身份与 iframe 中的业务表格分别读取，但必须属于同一业务会话。
       if (identity && ['profile', 'schedule', 'grades', 'exams'].some(domain => selectCduTables(domain as CduDomain, tables).length)) {
+        if (this.requestedStudentId && identity.studentId !== this.requestedStudentId) {
+          this.clearCredentials(); this.credentialFailure = true
+          this.revealSchoolWindow()
+          return this.update({ status: 'error', message: '学校返回的账户与输入学号不一致，请退出学校旧账户后重新连接' })
+        }
         const previous = this.getAccount()
         if (previous.studentId && previous.studentId !== identity.studentId) this.store.invalidatePreviews()
         const card = selectCduTables('profile', tables).find(table => table.headers[0] === '字段')
@@ -210,7 +356,12 @@ export class CduService {
         const now = Date.now()
         const lastVerifiedAt = previous.status === 'active' && previous.studentId === identity.studentId && now - (previous.lastVerifiedAt ?? 0) < 30_000 ? previous.lastVerifiedAt : now
         const profile = this.update({ ...identity, college, major, status: 'active', lastVerifiedAt, message: undefined })
+        this.businessVerified = true
         if (previous.studentId !== profile.studentId || previous.studentName !== profile.studentName || previous.college !== college || previous.major !== major || previous.lastVerifiedAt !== lastVerifiedAt) this.store.saveAccount(profile)
+        if (this.requestedStudentId) {
+          this.clearCredentials()
+          for (const win of this.windows) if (!win.isDestroyed()) win.hide()
+        }
         return profile
       }
       const kinds = (businessPages.length ? businessPages : pages).map(page => classifyCduPage(page.url, page.html))
@@ -227,20 +378,7 @@ export class CduService {
   private async navigateDomain(domain: CduDomain): Promise<boolean> {
     for (const frame of this.frames()) {
       if (!isCduBusinessUrl(frame.url)) continue
-      const clicked = await frame.executeJavaScript(`(() => {
-        const labels = ${JSON.stringify(MENU_LABELS[domain])};
-        const nodes = [...document.querySelectorAll('a,button,[role=menuitem]')];
-        const labelOf = el => (el.textContent || '').replace(/[\\uE000-\\uF8FF]/g, '').replace(/\\s*\\/\\s*$/, '').trim();
-        let target = nodes.find(el => el.getClientRects().length && labels.includes(labelOf(el)));
-        if (!target) {
-          const group = nodes.find(el => (el.textContent || '').trim().startsWith('信息查询'));
-          if (group) group.click();
-          target = nodes.find(el => labels.includes(labelOf(el)));
-        }
-        if (!target) return false;
-        if (target.href && !target.href.startsWith('javascript:') && new URL(target.href).origin !== location.origin) return false;
-        target.click(); return true;
-      })()`, true).catch(() => false)
+      const clicked = await this.executeFrameScript<boolean>(frame, buildCduMenuScript(MENU_LABELS[domain]), true)
       if (clicked) return true
     }
     return false
@@ -271,7 +409,7 @@ export class CduService {
       if (!pages.some(page => selectCduTables(input.domain, readCduPageTables(page.html)).length)) {
         await this.navigateDomain(input.domain)
         // 真实页面可能异步渲染；有界轮询，不长期占用主线程。
-        for (let attempt = 0; attempt < 12; attempt++) {
+        for (let attempt = 0; attempt < 40; attempt++) {
           await new Promise(resolve => setTimeout(resolve, 250))
           if (generation !== this.generation) return { success: false, error: '学校窗口已变化，请重新查询' }
           sessionPages = await this.snapshots()
@@ -311,6 +449,7 @@ export class CduService {
   }
   async logout(): Promise<void> {
     this.generation++
+    this.clearCredentials()
     const account = this.getAccount()
     for (const win of [...this.windows]) if (!win.isDestroyed()) win.destroy()
     this.window = undefined

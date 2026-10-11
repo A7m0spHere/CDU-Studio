@@ -1,5 +1,5 @@
 import { useStore } from 'jotai'
-import { cduAccountAtom, cduBusyAtom, cduDatasetsAtom, cduDiagnosticsAtom, cduDomainAtom, cduFormAtom, cduImportPreviewAtom, cduNoticeAtom } from '@/atoms/cdu-atoms'
+import { cduAccountAtom, cduBusyAtom, cduDatasetsAtom, cduDiagnosticsAtom, cduDomainAtom, cduFormAtom, cduImportPreviewAtom, cduLoginFormAtom, cduNoticeAtom } from '@/atoms/cdu-atoms'
 import { readCduImportFile } from '@/lib/cdu-import'
 import { useOpenSession } from './useOpenSession'
 
@@ -16,6 +16,11 @@ export function useCduZoneActions() {
     finally { store.set(cduBusyAtom, '') }
   }
   return {
+    login: () => run('连接学校账号', async () => {
+      const input = store.get(cduLoginFormAtom)
+      store.set(cduLoginFormAtom, current => ({ ...current, password: '' }))
+      await window.electronAPI.cduZone.login(input)
+    }),
     openLogin: (mode: 'direct' | 'vpn') => run('打开学校页面', () => window.electronAPI.cduZone.openLogin(mode)),
     approveLegacyVpnHttp: () => run('继续学校 VPN 转发', async () => {
       await window.electronAPI.cduZone.approveLegacyVpnHttp()
@@ -52,6 +57,7 @@ export function useCduZoneActions() {
       store.set(cduNoticeAtom, '本地教务缓存已清除')
     }),
     logout: () => run('退出学校账户', async () => {
+      store.set(cduLoginFormAtom, { username: '', password: '' })
       await window.electronAPI.cduZone.logout()
       store.set(cduDatasetsAtom, {}); store.set(cduImportPreviewAtom, null)
       store.set(cduFormAtom, current => ({ ...current, accountId: '' }))

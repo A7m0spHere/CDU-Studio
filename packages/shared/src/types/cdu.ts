@@ -1,7 +1,8 @@
-/** 成都大学专区契约；学校凭据不经过应用 IPC。 */
+/** 成都大学专区契约；密码仅用于本次学校认证，不落盘或提供给 Agent。 */
 export type CampusSchool = 'cdu' | 'cdut'
 export type CduDomain = 'profile' | 'schedule' | 'grades' | 'exams'
 export type CduAccountStatus = 'disconnected' | 'connecting' | 'requires_verification' | 'active' | 'expired' | 'error'
+export interface CduLoginInput { username: string; password: string }
 export interface CduAccountProfile {
   studentId: string
   studentName: string
@@ -49,6 +50,7 @@ export interface CduDiagnostic {
 }
 export interface CduZoneAPI {
   getAccount(): Promise<CduAccountProfile>
+  login(input: CduLoginInput): Promise<void>
   openLogin(mode: 'direct' | 'vpn'): Promise<void>
   approveLegacyVpnHttp(): Promise<void>
   verifyAccount(): Promise<CduAccountProfile>
@@ -62,7 +64,7 @@ export interface CduZoneAPI {
   onStatusChanged(callback: (profile: CduAccountProfile) => void): () => void
 }
 export const CDU_ZONE_IPC_CHANNELS = {
-  GET_ACCOUNT: 'cdu-zone:get-account', OPEN_LOGIN: 'cdu-zone:open-login',
+  GET_ACCOUNT: 'cdu-zone:get-account', LOGIN: 'cdu-zone:login', OPEN_LOGIN: 'cdu-zone:open-login',
   APPROVE_LEGACY_VPN_HTTP: 'cdu-zone:approve-legacy-vpn-http',
   VERIFY: 'cdu-zone:verify', LOGOUT: 'cdu-zone:logout', QUERY: 'cdu-zone:query',
   DIAGNOSE: 'cdu-zone:diagnose', PREVIEW_IMPORT: 'cdu-zone:preview-import',

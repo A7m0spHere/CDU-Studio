@@ -4,7 +4,8 @@ import type { CduDiagnostic } from '@profer/shared'
 import { classifyCduPage } from './cdu-page-parser'
 
 export const CDU_AUTH_PARTITION = 'persist:cdu-auth-zone'
-export const CDU_HOME_URL = 'https://szjw.cdu.edu.cn/'
+/** 学校官方应用导航实际公布的教务 SSO 入口，不能用站点根地址替代。 */
+export const CDU_HOME_URL = 'https://szjw.cdu.edu.cn/admin/caslogin'
 export const CDU_VPN_URL = 'https://vpn.cdu.edu.cn/'
 /** VPN 资源列表实测的教务转发域名；门户本身不能作为教务业务页。 */
 export function isCduBusinessUrl(value: string): boolean {
@@ -73,7 +74,7 @@ export class CduNetwork {
         const kind = classifyCduPage(response.url, body)
         result.httpStatus = response.status
         result.state = kind === 'business' ? (response.ok ? 'reachable' : 'site_blocked') : kind
-        result.message = result.state === 'site_blocked' ? '站点拒绝访问或维护中，请尝试官方 VPN' : result.state === 'reachable' ? '网站可达；尚不代表教务已登录' : '请在学校页面完成认证'
+        result.message = result.state === 'site_blocked' ? '当前访问路径返回拒绝内容；请检查本机代理、TUN 与 IPv4/IPv6 出口，或尝试官方 VPN' : result.state === 'reachable' ? '网站可达；尚不代表教务已登录' : '请在学校页面完成认证'
       } catch (error) {
         // 只返回标准错误码，不传递可能含认证票据的原始异常文本。
         const code = /\bERR_[A-Z_]+\b/.exec(error instanceof Error ? error.message : '')?.[0]

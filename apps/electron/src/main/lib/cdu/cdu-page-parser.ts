@@ -17,7 +17,7 @@ export function classifyCduPage(url: string, body: string): 'business' | 'login_
   const location = new URL(url)
   // Sangfor 资源页保留屏外防自动填充密码框；不能把它当成仍处于登录页。
   if (location.hostname === 'vpn.cdu.edu.cn' && location.pathname.startsWith('/portal/') && location.hash === '#!/service') return 'business'
-  if (/短信验证码|企业微信扫码|扫码验证|二次认证/.test(body)) return 'verification_required'
+  if (/data-cdu-verification-required|短信验证码|企业微信扫码|扫码验证|二次认证/.test(body)) return 'verification_required'
   const host = location.hostname
   if (host === 'vpn.cdu.edu.cn' && location.pathname.startsWith('/portal/') && location.hash === '#!/login') return 'login_required'
   if (host === 'id.cdu.edu.cn' || /data-cdu-login-required/.test(body) || /<input[^>]+type=["']password/i.test(body)) return 'login_required'
@@ -28,8 +28,38 @@ export function classifyCduPage(url: string, body: string): 'business' | 'login_
 export function parseHtmlTables(html: string): CduTable[] {
   const $ = load(html)
   $('script,style,noscript').remove()
+  $('[hidden],[style]').each((_index, element) => {
+    if ($(element).attr('hidden') !== undefined || /(?:display\s*:\s*none|visibility\s*:\s*hidden)/i.test($(element).attr('style') ?? '')) $(element).remove()
+  })
   const tables: CduTable[] = []
   const grids = new Set<unknown>()
+  // 超星 jqGrid 同样拆分表头和数据，按 aria-describedby 关联，忽略隐藏主键及占位首行。
+  $('.ui-jqgrid-view').each((_index, view) => {
+    const columns = new Map<string, string>()
+    $(view).find('.ui-jqgrid-htable th[id]').each((_i, cell) => {
+      if ($(cell).closest('.ui-jqgrid-view')[0] !== view || /display\s*:\s*none/i.test($(cell).attr('style') ?? '') || $(cell).attr('hidden') !== undefined) return
+      const id = $(cell).attr('id')!
+      const label = cleanCduText($(cell).text())
+      if (label) columns.set(id, label)
+    })
+    if (!columns.size) return
+    if (columns.size > 100 || tables.length >= 50) throw new Error('业务网格超过 100 列或 50 张表格')
+    const rows: string[][] = []
+    $(view).find('.ui-jqgrid-btable tr.jqgrow').each((_i, row) => {
+      if ($(row).closest('.ui-jqgrid-view')[0] !== view) return
+      if (rows.length >= 5000) throw new Error('业务网格超过 5000 行')
+      const values = new Map<string, string>()
+      $(row).children('td[aria-describedby]').each((_j, cell) => {
+        const id = $(cell).attr('aria-describedby')!
+        if (!columns.has(id)) return
+        const copy = $(cell).clone(); copy.find('br').replaceWith(' / ')
+        values.set(id, cleanCduText(copy.text()))
+      })
+      rows.push([...columns.keys()].map(id => values.get(id) ?? ''))
+    })
+    grids.add(view)
+    tables.push({ headers: [...columns.values()], rows })
+  })
   // 学校 EasyUI 网格将表头、数据和冻结列分成多张表，必须按 field 合并。
   $('.datagrid-view').each((_index, view) => {
     const columns = new Map<string, string>()
@@ -62,7 +92,7 @@ export function parseHtmlTables(html: string): CduTable[] {
     tables.push({ headers: [...columns.values()], rows: [...rows.values()].map(row => [...columns.keys()].map(field => row.get(field) ?? '')) })
   })
   $('table').each((_index, element) => {
-    if (grids.has($(element).closest('.datagrid-view')[0]) || $(element).find('table').length) return
+    if (grids.has($(element).closest('.datagrid-view,.ui-jqgrid-view')[0]) || $(element).find('table').length) return
     if (tables.length >= 50) throw new Error('表格数量超过上限（50 张）')
     const grid: string[][] = []
     $(element).find('tr').filter((_i, row) => $(row).closest('table')[0] === element).each((rowIndex, row) => {

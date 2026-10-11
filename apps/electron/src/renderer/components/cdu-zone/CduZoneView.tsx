@@ -10,6 +10,7 @@ import { useCduZoneActions } from '@/hooks/useCduZoneActions'
 import { cduAccountAtom, cduBusyAtom, cduDatasetsAtom, cduDiagnosticsAtom, cduDomainAtom, cduFormAtom, cduImportPreviewAtom, cduLogoutOpenAtom, cduLegacyVpnConfirmAtom, cduNoticeAtom } from '@/atoms/cdu-atoms'
 import cduLogo from '@/assets/cdu-logo.svg'
 import { CduDataTables } from './CduDataTables'
+import { CduLoginForm } from './CduLoginForm'
 
 const sections = [
   { domain: 'schedule', title: '我的课表', description: '课程、周次与上课地点', icon: CalendarDays },
@@ -49,19 +50,21 @@ export function CduZoneView(): React.ReactElement {
             <p className="mb-2 text-xs font-medium tracking-[0.15em] opacity-70">学习与校园生活</p>
             <h1 className="text-3xl font-semibold tracking-tight">教务信息，近在手边。</h1>
             <p className="mt-4 max-w-md text-sm leading-7 opacity-80">连接成都大学数智教务，查看自己的课程、成绩和考试安排，也可以把问题交给教务助理。</p>
-            <div className="mt-7 flex items-center gap-2 text-xs opacity-80"><ShieldCheck size={15} />密码与验证操作留在学校原生页面</div>
+            <div className="mt-7 flex items-center gap-2 text-xs opacity-80"><ShieldCheck size={15} />一次输入账号，学校验证由你完成</div>
           </div>
           <div className="flex flex-col rounded-3xl bg-card p-7 shadow-sm">
             <div className="flex items-center justify-between gap-3"><h2 className="font-semibold">学校账户</h2><span className={cn('rounded-full px-3 py-1 text-xs', account.status === 'active' ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>{statusLabels[account.status]}</span></div>
             <p className="mt-6 text-2xl font-semibold">{account.studentName || '连接你的成都大学账户'}</p>
-            <p className="mt-2 text-sm text-muted-foreground">{account.studentId ? `学号 ${account.studentId}` : '在学校窗口登录并完成必要的身份验证。'}</p>
-            <p className="mt-4 min-h-12 text-xs leading-6 text-muted-foreground">{account.message || (account.status === 'active' ? '账户已通过页面验证；查询时仍需检查学校登录态。' : '校外访问请使用官方 VPN，从资源列表进入“数智教务”。登录后软件会自动进入数智教务、继续统一认证并验证本人身份；未识别的页面可手动打开个人信息。')}</p>
+            <p className="mt-2 text-sm text-muted-foreground">{account.studentId ? `学号 ${account.studentId}` : '输入学校账号，自动连接数智教务。'}</p>
+            <p className="mt-4 text-xs leading-6 text-muted-foreground">{account.message || (account.status === 'active' ? '账户已通过页面验证；查询时仍需检查学校登录态。' : '自动尝试直连，必要时转入官方 VPN，再进入数智教务验证本人身份。')}</p>
+            {!['active', 'connecting', 'requires_verification'].includes(account.status) && <CduLoginForm onLogin={() => void actions.login()} />}
             <div className="mt-5 flex flex-wrap gap-2">
-              <Button disabled={!!busy} onClick={() => void actions.openLogin('direct')}>连接学校账号 <ArrowUpRight size={14} className="ml-2" /></Button>
+              <Button variant="outline" disabled={!!busy} onClick={() => void actions.openLogin('direct')}>打开学校页面 <ArrowUpRight size={14} className="ml-2" /></Button>
               <Button variant="outline" disabled={!!busy} onClick={() => void actions.openLogin('vpn')}>官方 VPN</Button>
               <Button variant="ghost" disabled={!!busy} onClick={() => void actions.verify()}>检查登录状态</Button>
               <Button variant="ghost" disabled={!!busy} onClick={() => setLegacyVpnConfirm(true)}>{account.connectionHint === 'legacy_vpn_http' ? '处理旧版 VPN 入口' : 'VPN 兼容方式'}</Button>
               {account.studentId && <Button variant="ghost" disabled={!!busy} aria-label="退出学校账户" onClick={() => setLogoutOpen(true)}><LogOut size={16} /></Button>}
+              {!account.studentId && ['connecting', 'requires_verification'].includes(account.status) && <Button variant="ghost" disabled={!!busy} onClick={() => void actions.logout()}>取消连接</Button>}
             </div>
           </div>
         </section>
@@ -100,7 +103,7 @@ export function CduZoneView(): React.ReactElement {
 
         <section className="rounded-2xl bg-card p-5 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex items-center gap-2 text-sm font-medium"><Activity size={16} />校园网络检查</div><div className="flex gap-2"><Button variant="ghost" disabled={!!busy} onClick={() => void actions.diagnose()}>检查直连</Button>{account.studentId && <Button variant="ghost" disabled={!!busy} onClick={() => void actions.clearCache()}>清除本地数据</Button>}</div></div>
-          <p className="mt-2 text-xs leading-6 text-muted-foreground">学校访问使用独立直连分区。Clash TUN 仍可能接管底层流量；本机需为 cdu.edu.cn 设置 DIRECT。网站可达与教务登录成功分别验证。</p>
+          <p className="mt-2 text-xs leading-6 text-muted-foreground">学校访问使用独立直连分区。开启 Clash TUN 后，直连规则仍可能受网络出口影响；出现“页面正在修复”时请检查代理与 IPv4/IPv6 路径。网站可达与教务登录成功分别验证。</p>
           {!!diagnostics.length && <div className="mt-4 grid gap-3 md:grid-cols-2">{diagnostics.map(item => <div key={item.host} className="rounded-xl bg-muted/50 p-4 text-xs"><p className="font-medium">{item.host} · {item.proxy}</p><p className="mt-2 text-muted-foreground">{item.message}{item.networkError ? `（${item.networkError}）` : ''}{item.httpStatus ? `（HTTP ${item.httpStatus}）` : ''}</p><p className="mt-2 break-all text-muted-foreground">{item.addresses.join(' / ') || 'DNS 解析失败'}{item.fakeIp ? ' · 检测到 Fake-IP，请检查 Clash 规则' : ''}</p></div>)}</div>}
         </section>
       </div>

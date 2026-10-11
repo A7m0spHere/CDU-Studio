@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, test } from 'bun:test'
+import { afterEach, describe, expect, spyOn, test } from 'bun:test'
 import type { BrowserWindow, Session } from 'electron'
 import { mkdtempSync, readFileSync, writeFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -6,6 +6,7 @@ import { join } from 'node:path'
 import { CduService } from './cdu-service'
 import { CduNetwork } from './cdu-network'
 import { CduStore } from './cdu-store'
+import type { CduCredentialResult } from './cdu-credential-login'
 
 const roots: string[] = []
 const cleanup: Array<() => void> = []
@@ -15,32 +16,157 @@ const grades = '<table><tr><th>课程</th><th>成绩</th></tr><tr><td>数学</td
 function harness() {
   const root = mkdtempSync(join(tmpdir(), 'cdu-service-')); roots.push(root)
   const calls: string[] = []
+  const credentialScripts: string[] = []
+  const windowOptions: Array<{ show?: boolean }> = []
   const ses = { setProxy: async () => { calls.push('direct') }, closeAllConnections: async () => { calls.push('closeConnections') }, clearStorageData: async () => { calls.push('clearStorage') }, clearCache: async () => { calls.push('clearCache') } } as unknown as Session
   const fakeWindow = () => {
     let html = ''; let url = 'about:blank'; let destroyed = false; let clickLabel = ''; let focused = 0; let onClick = () => {}
     let popupHandler: (details: { url: string }) => any = () => ({ action: 'deny' })
     const events = new Map<string, (...args: any[]) => unknown>()
     const extraFrames: unknown[] = []
+    let credentialResult: CduCredentialResult = { state: 'submitted' }
     const frame = { get url() { return url }, executeJavaScript: async (script: string) => {
+      if (script.includes('const stage =')) {
+        credentialScripts.push(script)
+        if (script.includes('if (!false)') && credentialResult.state === 'submitted') return { state: 'not_ready' }
+        if (credentialResult.state === 'submitted') calls.push(`submit:${url.includes('vpn.cdu.edu.cn/portal') ? 'vpn' : 'identity'}`)
+        return credentialResult
+      }
       if (script.includes('target.click()')) {
         if (clickLabel && script.includes(clickLabel)) { calls.push(`click:${clickLabel}`); onClick(); return true }
         return false
       }
       return html
     }, get framesInSubtree(): unknown[] { return [frame, ...extraFrames] } }
-    const win = { webContents: { mainFrame: frame, setWindowOpenHandler: (cb: typeof popupHandler) => { popupHandler = cb }, on: (name: string, cb: (...args: any[]) => unknown) => events.set(name, cb) }, show: () => {}, focus: () => { focused++ }, isDestroyed: () => destroyed, loadURL: async (value: string) => { url = value; calls.push('navigate') }, on: (name: string, cb: () => void) => events.set(name, cb), destroy: () => { destroyed = true; events.get('closed')?.() } } as unknown as BrowserWindow
+    const win = { webContents: { mainFrame: frame, setWindowOpenHandler: (cb: typeof popupHandler) => { popupHandler = cb }, on: (name: string, cb: (...args: any[]) => unknown) => events.set(name, cb) }, show: () => { calls.push('show') }, hide: () => { calls.push('hide') }, focus: () => { focused++ }, isDestroyed: () => destroyed, loadURL: async (value: string) => { url = value; calls.push('navigate') }, on: (name: string, cb: () => void) => events.set(name, cb), destroy: () => { destroyed = true; events.get('closed')?.() } } as unknown as BrowserWindow
     cleanup.push(() => { if (!destroyed) win.destroy() })
-    return { win, events, focusCount: () => focused, addFrame: (content: string, address: string) => extraFrames.push({ url: address, executeJavaScript: async () => content }), popup: (address: string) => popupHandler({ url: address }), setClick: (label: string, action = () => {}) => { clickLabel = label; onClick = action }, setPage: (value: string, address = 'https://szjw.cdu.edu.cn/student') => { html = value; url = address } }
+    return { win, events, focusCount: () => focused, setCredentialResult: (state: CduCredentialResult['state']) => { credentialResult = { state } }, addFrame: (content: string, address: string) => extraFrames.push({ url: address, executeJavaScript: async () => content }), popup: (address: string) => popupHandler({ url: address }), setClick: (label: string, action = () => {}) => { clickLabel = label; onClick = action }, setPage: (value: string, address = 'https://szjw.cdu.edu.cn/student') => { html = value; url = address } }
   }
   const native = fakeWindow()
-  const service = new CduService(new CduNetwork(() => ses), new CduStore(() => root), () => native.win)
-  return { service, root, calls, ses, native, setPage: native.setPage, close: () => native.win.destroy(), openChild: (url: string) => {
+  const service = new CduService(new CduNetwork(() => ses), new CduStore(() => root), options => { windowOptions.push(options); return native.win })
+  return { service, root, calls, credentialScripts, windowOptions, ses, native, setPage: native.setPage, close: () => native.win.destroy(), openChild: (url: string) => {
     const response = native.popup(url)
     const child = fakeWindow(); child.setPage('', url)
     if (response.action === 'allow') native.events.get('did-create-window')?.(child.win)
     return { ...child, response }
   } }
 }
+
+describe('账户卡一次输入与学校认证衔接', () => {
+  const input = { username: '20260001', password: '仅用于合成测试的密码' }
+  test('Given 账户卡输入 When 统一认证及业务身份验证完成 Then 后台连接且密码不落盘', async () => {
+    const h = harness(); await h.service.login(input)
+    expect(h.windowOptions[0]?.show).toBe(false)
+    expect(h.calls.indexOf('clearStorage')).toBeLessThan(h.calls.indexOf('navigate'))
+    h.setPage('<input type="password">', 'https://id.cdu.edu.cn/login')
+    await h.service.advanceLogin(); await h.service.advanceLogin()
+    expect(h.calls.filter(call => call === 'submit:identity')).toHaveLength(1)
+    h.setPage(identity + grades); await h.service.advanceLogin()
+    expect(h.service.getAccount().status).toBe('active')
+    expect(h.calls).toContain('hide')
+    expect(readFileSync(join(h.root, 'cdu-account.json'), 'utf8')).not.toContain(input.password)
+    const count = h.credentialScripts.length
+    h.setPage('<input type="password">', 'https://id.cdu.edu.cn/login'); await h.service.advanceLogin()
+    expect(h.credentialScripts).toHaveLength(count)
+  })
+  test('Given 直连维护 When 转入 VPN 再进入统一认证 Then 沿用账户卡输入且各阶段只提交一次', async () => {
+    const h = harness(); await h.service.login(input)
+    h.setPage('系统维护中'); await h.service.advanceLogin()
+    h.setPage('<input type="password">', 'https://vpn.cdu.edu.cn/portal/#!/login')
+    await h.service.advanceLogin(); await h.service.advanceLogin()
+    h.setPage('<input type="password">', 'https://id.cdu.edu.cn/login')
+    await h.service.advanceLogin(); await h.service.advanceLogin()
+    expect(h.calls.filter(call => call === 'submit:vpn')).toHaveLength(1)
+    expect(h.calls.filter(call => call === 'submit:identity')).toHaveLength(1)
+    expect(h.credentialScripts.filter(script => script.includes(input.password))).toHaveLength(2)
+  })
+  test.each(['verification_required', 'consent_required'] as const)('Given 学校要求 %s When 自动连接 Then 显示学校窗口交由本人完成', async state => {
+    const h = harness(); await h.service.login(input)
+    h.native.setCredentialResult(state)
+    h.setPage('<input type="password">', 'https://id.cdu.edu.cn/login'); await h.service.advanceLogin()
+    expect(h.service.getAccount().status).toBe('requires_verification')
+    expect(h.calls).toContain('show')
+    const navigations = h.calls.filter(call => call === 'navigate').length
+    await h.service.openLogin('vpn')
+    expect(h.calls.filter(call => call === 'navigate')).toHaveLength(navigations)
+  })
+  test('Given 学校拒绝密码 When 轮询继续 Then 停止提交且不盲目转向 VPN 重试', async () => {
+    const h = harness(); await h.service.login(input)
+    h.native.setCredentialResult('rejected'); h.setPage('<input type="password">', 'https://id.cdu.edu.cn/login')
+    await h.service.advanceLogin()
+    expect(h.service.getAccount().status).toBe('error')
+    const count = h.credentialScripts.length; await h.service.advanceLogin()
+    expect(h.credentialScripts).toHaveLength(count)
+    expect(h.service.getAccount().message).not.toContain(input.password)
+  })
+  test('Given 本次输入的学号 When 学校返回另一个账户 Then 拒绝激活及持久化', async () => {
+    const h = harness(); await h.service.login(input)
+    h.setPage(identity.replaceAll('20260001', '20260002') + grades)
+    expect((await h.service.verifyAccount()).status).toBe('error')
+    expect(h.service.store.loadAccount().studentId).toBe('')
+  })
+  test('Given 连接被取消 When 再打开学校登录页 Then 不再自动填入已取消的密码', async () => {
+    const h = harness(); await h.service.login(input); await h.service.logout()
+    h.setPage('<input type="password">', 'https://id.cdu.edu.cn/login'); await h.service.advanceLogin()
+    expect(h.credentialScripts).toHaveLength(0)
+    expect(h.service.getAccount().status).toBe('disconnected')
+  })
+  test('Given 非法学号或空密码 When 连接 Then 在打开学校页面前拒绝', async () => {
+    const h = harness()
+    await expect(h.service.login({ username: '../other', password: '测试' })).rejects.toThrow('学号')
+    await expect(h.service.login({ username: input.username, password: '' })).rejects.toThrow('密码')
+    expect(h.calls).toEqual([])
+  })
+  test('Given 认证初始化仍在等待 When 用户取消 Then 旧请求不得重新打开登录窗口', async () => {
+    const h = harness(); let release!: () => void
+    const ready = new Promise<void>(resolve => { release = resolve })
+    h.ses.setProxy = async () => { await ready }
+    const pending = h.service.login(input)
+    const cancelled = h.service.logout()
+    release(); await Promise.all([pending, cancelled])
+    expect(h.calls).not.toContain('navigate')
+    expect(h.service.getAccount().status).toBe('disconnected')
+  })
+  test('Given 人工验证需要时间 When 进入等待 Then 只延长一次且到期后不再自动提交密码', async () => {
+    const h = harness()
+    const original = globalThis.setTimeout
+    const timers: Array<{ callback: () => void; delay: number; timer: ReturnType<typeof setTimeout> }> = []
+    const timeout = spyOn(globalThis, 'setTimeout').mockImplementation(((callback: () => void, delay = 0) => {
+      const timer = original(callback, delay)
+      if (delay >= 120_000) timers.push({ callback, delay, timer })
+      return timer
+    }) as typeof setTimeout)
+    try {
+      await h.service.login(input)
+      h.native.setCredentialResult('consent_required'); h.setPage('<input type="password">', 'https://vpn.cdu.edu.cn/portal/#!/login')
+      await h.service.advanceLogin(); await h.service.advanceLogin()
+      expect(timers.map(item => item.delay)).toEqual([120_000, 600_000])
+      timers[1]!.callback()
+      expect(h.service.getAccount().message).toContain('释放')
+      const count = h.credentialScripts.length
+      h.native.setCredentialResult('submitted'); h.setPage('<input type="password">', 'https://id.cdu.edu.cn/login')
+      await h.service.advanceLogin()
+      expect(h.credentialScripts).toHaveLength(count)
+    } finally { timers.forEach(item => clearTimeout(item.timer)); timeout.mockRestore() }
+  })
+})
+
+test('Given 学校成绩网格加载超过三秒 When 查询 Then 有界等待后读取真实行', async () => {
+  const h = harness(); await h.service.openLogin('direct')
+  h.setPage(identity + grades); await h.service.verifyAccount()
+  h.setPage(identity); h.native.setClick('全部成绩查询')
+  const execute = h.native.win.webContents.mainFrame.executeJavaScript.bind(h.native.win.webContents.mainFrame)
+  let snapshots = 0
+  const mock = spyOn(h.native.win.webContents.mainFrame, 'executeJavaScript').mockImplementation(async (source: string) => {
+    if (source.includes('document.body.cloneNode')) return identity + (++snapshots > 14 ? grades : '<p data-cdu-loading>加载中</p>')
+    return execute(source)
+  })
+  try {
+    const result = await h.service.query({ domain: 'grades' })
+    expect(result.success).toBe(true)
+    expect(result.data?.tables[0]?.rows).toEqual([['数学', '90']])
+  } finally { mock.mockRestore() }
+})
 
 describe('原生登录与只读查询', () => {
   test.each([
@@ -104,7 +230,7 @@ describe('原生登录与只读查询', () => {
   })
   test('初始化直连后才导航；等待验证、取消登录不产生成功状态', async () => {
     const h = harness(); await h.service.openLogin('direct')
-    expect(h.calls.slice(0, 3)).toEqual(['direct', 'closeConnections', 'navigate'])
+    expect(h.calls.filter(call => ['direct', 'closeConnections', 'navigate'].includes(call)).slice(0, 3)).toEqual(['direct', 'closeConnections', 'navigate'])
     h.setPage('短信验证码', 'https://id.cdu.edu.cn/login')
     expect((await h.service.verifyAccount()).status).toBe('requires_verification')
     h.close(); expect(h.service.getAccount().status).toBe('disconnected')
@@ -221,5 +347,15 @@ describe('学校账号自动连接', () => {
     h.setPage('403 Forbidden', 'https://vpn.cdu.edu.cn/')
     await h.service.advanceLogin()
     expect(h.calls.filter(call => call === 'navigate')).toHaveLength(navigations)
+  })
+  test('Given 已验证学校账户 When 业务页拒绝访问 Then 保留原会话且不自动切换 VPN', async () => {
+    const h = harness(); await h.service.openLogin('direct')
+    h.setPage(identity + grades); await h.service.advanceLogin()
+    expect(h.service.getAccount().status).toBe('active')
+    const navigations = h.calls.filter(call => call === 'navigate').length
+    h.setPage('403 Forbidden'); await h.service.advanceLogin()
+    expect(h.service.getAccount().status).toBe('error')
+    expect(h.calls.filter(call => call === 'navigate')).toHaveLength(navigations)
+    expect(h.native.win.webContents.mainFrame.url).toBe('https://szjw.cdu.edu.cn/student')
   })
 })

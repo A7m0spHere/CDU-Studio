@@ -1,5 +1,5 @@
 import { BrowserWindow, ipcMain } from 'electron'
-import { CDU_ZONE_IPC_CHANNELS as C, type CduImportInput, type CduQueryInput } from '@profer/shared'
+import { CDU_ZONE_IPC_CHANNELS as C, type CduImportInput, type CduLoginInput, type CduQueryInput } from '@profer/shared'
 import { cduService } from './cdu-service'
 import { createAgentSession, updateAgentSessionMeta } from '../agent-session-manager'
 
@@ -11,6 +11,7 @@ export function registerCduIpc(getMainWindow: () => BrowserWindow | null): void 
     })
   }
   handle(C.GET_ACCOUNT, () => cduService.getAccount())
+  handle(C.LOGIN, (_owner, input: CduLoginInput) => cduService.login(input))
   handle(C.OPEN_LOGIN, (_owner, mode: 'direct' | 'vpn') => cduService.openLogin(mode))
   handle(C.APPROVE_LEGACY_VPN_HTTP, () => cduService.approveLegacyVpnHttp())
   handle(C.VERIFY, () => cduService.verifyAccount())
